@@ -1,0 +1,31 @@
+WaniKani TokiDoki
+
+[o] serialize all the timeline api calls somehow.
+[o] as for the available lessons and reviews bubbles, darken the fill and change the text to white.
+[ ] push the loading screen on top of the summary screen.  re-push on refresh.
+[ ] no pin if review time is seconds away.  maybe configurable time window?
+[ ] change review time text to say 'about N units' and handle the singular case.  switch to seconds at :30, etc.
+[ ] refresh can be scheduled for up to 24 days, so go ahead and schedule day refreshes.
+
+Welcome screen.  Summarize purpose, prompt for configuration.
+
+[ ] test the config page.
+
+Splash Screen - 'Consulting the Crabigator.'
+
+Error screen.  Tell user about problem getting their data.
+
+[o] Scan through all of the items to build a schedule of reviews.
+    This way, if you have 1 item available now, but 15 coming available in a short while, you could just wait and get all 16 grouped up.
+
+[ ] when reviews become available during a display refresh,
+    use the schedule data to update to reviews_available without a data fetch.
+
+wanikani.com sez:
+~1 hour     @ 51 minutes
+45 minutes  @ 45 minutes
+
+With the dashboard open, when reviews become available, they are added into
+the reviews-available-next-hour and reviews-available-next-day displays, but
+when the page is refreshed, the available reviews are not counted towards
+those totals.  The API results do not include them either.

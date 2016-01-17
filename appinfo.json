@@ -1,0 +1,31 @@
+{
+    "uuid": "CE694583-C51A-4567-8376-D4758DACA3D8",
+    "shortName": "wanikani-tokidoki",
+    "longName": "wanikani-tokidoki",
+    "companyName": "JR Mobley",
+    "versionCode": 1,
+    "versionLabel": "1.0",
+    "sdkVersion": "3",
+    "targetPlatforms": ["aplite", "basalt"],
+    "capabilities": ["configurable"],
+    "watchapp": {
+        "watchface": false
+    },
+    "appKeys": {
+
+        "username": 101,
+
+        "lessons_available": 201,
+        "reviews_available": 202,
+        "next_review_date": 203,
+        "reviews_available_next_hour": 204,
+        "reviews_available_next_day": 205,
+        "schedule": 206,
+
+        "command": 1000,
+        "refresh": 1001
+    },
+    "resources": {
+        "media": []
+    }
+}
