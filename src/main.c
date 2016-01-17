@@ -11,8 +11,9 @@ enum {
     AppKeyReviewsAvailableNextDay = 205,
     AppKeySchedule = 206,
 
-    AppKeyCommand = 1000,
-    AppKeyRefreshCmd = 1001,
+    AppKeyError = 1000,
+    ErrorNoKey = 1,
+    ErrorNoUser = 2,
 };
 
 const time_t kSlotSize   = 60 * 15;
@@ -22,6 +23,9 @@ const time_t kOneDay     = 60 * 60 * 24;
 const time_t kHalfMinute = 60 / 2;
 const time_t kHalfHour   = 60 * 60 / 2;
 const time_t kHalfDay    = 60 * 60 * 24 / 2;
+const time_t kSecondsMark = 45;
+const time_t kMinutesMark = 45 * 60;
+const time_t kHoursMark   = 18 * 60 * 60;
 const uint16_t kMaxItemDisplay = 42; // ha ha ha
 
 typedef struct {
@@ -44,14 +48,17 @@ typedef struct {
 } StudyQueue;
 
 Window* theLoadScreen;
+Window* theErrorScreen;
 Window* theMainScreen;
 StudyQueue theStudyQueue;
 DisplayData theDisplayData;
 AppTimer* theRefreshTimer;
+int32_t theErrorCode;
 
-extern Window* createLoadScreen();
-extern Window* createMainScreen();
+static Window* createLoadScreen();
+static Window* createMainScreen();
 static void refreshMainScreen();
+static void setErrorCode(int32_t errorCode);
 
 static void refreshTimerCallback(void* data) {
     theRefreshTimer = NULL;
@@ -176,7 +183,7 @@ static void refreshMainScreen() {
 
     /* To display the next-review-date, we want to express the span of time
        from now until then as an even number of the most appropriate time units.
-       E.g. "10 mintes" or "1 hour".  Or, if reviews are currently available,
+       E.g. "10 minutes" or "1 hour".  Or, if reviews are currently available,
        we simply say that.  This is also where we calculate the time until the
        next display refresh.  This is when any of the displayed values will need
        to change, so the interval is dependent on what we are currently
@@ -193,45 +200,42 @@ static void refreshMainScreen() {
            there are no currently available reviews, will schedule a refresh
            for when the time-until-next-review needs to be updated. */
 
-    } else if (span <= kOneMinute) {
+    } else if (span <= kSecondsMark) {
         refresh = 1;
         APP_LOG(APP_LOG_LEVEL_DEBUG, "review in %lus", span);
         buffer += 1 + snprintf(buffer, end - buffer, "%lu seconds", span);
 
-    } else if (span <= kOneHour) {
+    } else if (span <= kMinutesMark) {
         time_t nearestMinute = (span + kHalfMinute) / kOneMinute;
-        time_t secondsUntilMinuteChange = (span + kHalfMinute) % kOneMinute + 1;
-        time_t secondsUntilScaleChange = span - kOneMinute;
-        refresh = firstOf(secondsUntilMinuteChange, secondsUntilScaleChange);
-        if (refresh == 0) {
-            refresh = kOneMinute;
-        }
+        time_t digitBumpIn = span - (nearestMinute * kOneMinute - kHalfMinute - 1);
+        time_t unitBumpIn = span - kSecondsMark;
+        refresh = firstOf(digitBumpIn, unitBumpIn);
         APP_LOG(APP_LOG_LEVEL_DEBUG,
             "review in %lum; digit bump in %lus; unit bump in %lus",
-            nearestMinute, secondsUntilMinuteChange, secondsUntilScaleChange);
-        buffer += 1 + snprintf(buffer, end - buffer, "%lu minutes", nearestMinute);
+            nearestMinute, digitBumpIn, unitBumpIn);
+        buffer += 1 + snprintf(buffer, end - buffer, "%lu %s",
+            nearestMinute, (nearestMinute == 1) ? "minute" : "minutes");
 
-    } else if (span <= kOneDay) {
+    } else if (span <= kHoursMark) {
         time_t nearestHour = (span + kHalfHour) / kOneHour;
-        time_t secondsUntilHourChange = (span + kHalfHour) % kOneHour + 1;
-        time_t secondsUntilScaleChange = span - kOneHour;
-        refresh = firstOf(secondsUntilHourChange, secondsUntilScaleChange);
-        if (refresh == 0) {
-            refresh = kOneHour;
-        }
+        time_t digitBumpIn = span - (nearestHour * kOneHour - kHalfHour - kOneMinute);
+        time_t unitBumpIn = span - kMinutesMark;
+        refresh = firstOf(digitBumpIn, digitBumpIn);
         APP_LOG(APP_LOG_LEVEL_DEBUG,
             "review in %luh; digit bump in %lus; unit bump in %lus",
-            nearestHour, secondsUntilHourChange, secondsUntilScaleChange);
-        buffer += 1 + snprintf(buffer, end - buffer, "%lu hours", nearestHour);
+            nearestHour, digitBumpIn, unitBumpIn);
+        buffer += 1 + snprintf(buffer, end - buffer, "%lu %s",
+            nearestHour, (nearestHour == 1) ? "hour" : "hours");
 
     } else {
         time_t nearestDay = (span + kHalfDay) / kOneDay;
-        time_t secondsUntilDayChange = (span + kHalfDay) % kOneDay + 1;
-        time_t secondsUntilScaleChange = span - kOneDay;
+        time_t digitBumpIn = span - (nearestDay * kOneDay - kHalfDay - kOneHour);
+        time_t unitBumpIn = span - kHoursMark;
         APP_LOG(APP_LOG_LEVEL_DEBUG,
             "review in %lud; digit bump in %lus; unit bump in %lus",
-            nearestDay, secondsUntilDayChange, secondsUntilScaleChange);
-        buffer += 1 + snprintf(buffer, end - buffer, "%lu days", nearestDay);
+            nearestDay, digitBumpIn, unitBumpIn);
+        buffer += 1 + snprintf(buffer, end - buffer, "%lu %s",
+            nearestDay, (nearestDay == 1) ? "day" : "days");
     }
 
     /* Finally, we can schedule the next refresh and tell the system to redraw
@@ -253,10 +257,14 @@ static void refreshMainScreen() {
 static void messageReceived(DictionaryIterator* received, void* context) {
 
     StudyQueue* q = &theStudyQueue;
+    int32_t error = 0;
 
     for (Tuple* t = dict_read_first(received); t != NULL; t = dict_read_next(received)) {
 
-        if (AppKeyLessonsAvailable == t->key) {
+        if (AppKeyError == t->key) {
+            error = t->value->int32;
+
+        } else if (AppKeyLessonsAvailable == t->key) {
             q->lessonsAvailable = t->value->int32;
 
         } else if (AppKeyReviewsAvailable == t->key) {
@@ -278,13 +286,18 @@ static void messageReceived(DictionaryIterator* received, void* context) {
         }
     }
 
-    refreshMainScreen();
-    window_stack_remove(theLoadScreen, true);
+    setErrorCode(error);
+    if (!error) {
+        refreshMainScreen();
+        window_stack_remove(theLoadScreen, true);
+    }
 }
 
 static void init() {
 
     memset(&theStudyQueue, 0, sizeof theStudyQueue);
+    theErrorScreen = NULL;
+    theErrorCode = 0;
 
     theMainScreen = createMainScreen();
     window_stack_push(theMainScreen, false);
@@ -307,6 +320,7 @@ static void init() {
 static void deinit() {
     window_destroy(theLoadScreen);
     window_destroy(theMainScreen);
+    window_destroy(theErrorScreen);
 }
 
 int main() {
@@ -354,6 +368,60 @@ Window* createLoadScreen() {
         .unload = unloadLoadScreen,
     });
     return window;
+}
+
+// -----------------------------------------------------------------------------
+// Error Screen functions
+// -----------------------------------------------------------------------------
+
+static TextLayer* theErrorDisplay = NULL;
+
+static void loadErrorScreen(Window* window) {
+    Layer* windowLayer = window_get_root_layer(window);
+    GRect bounds = layer_get_bounds(windowLayer);
+    const GEdgeInsets insets = {
+        .top = 10, .left = 10, .right = 10
+    };
+
+    theErrorDisplay = text_layer_create(grect_inset(bounds, insets));
+    text_layer_set_text_alignment(theErrorDisplay, GTextAlignmentCenter);
+    text_layer_set_overflow_mode(theErrorDisplay, GTextOverflowModeWordWrap);
+    text_layer_set_font(theErrorDisplay, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD));
+    text_layer_set_text_color(theErrorDisplay, GColorWhite);
+    text_layer_set_background_color(theErrorDisplay, GColorClear);
+
+    text_layer_set_text(theErrorDisplay,
+        "Please provide your Public API Key in the settings.");
+
+#if defined(PBL_ROUND)
+    text_layer_enable_screen_text_flow_and_paging(theErrorDisplay, 3);
+#endif
+
+    layer_add_child(windowLayer, text_layer_get_layer(theErrorDisplay));
+}
+
+static void unloadErrorScreen(Window* window) {
+    text_layer_destroy(theErrorDisplay);
+    theErrorDisplay = NULL;
+}
+
+void setErrorCode(int32_t errorCode) {
+    theErrorCode = errorCode;
+    if (theErrorCode == 0) {
+        if (theErrorScreen) {
+            window_stack_remove(theErrorScreen, true);
+        }
+    } else {
+        if (! theErrorScreen) {
+            theErrorScreen = window_create();
+            window_set_background_color(theErrorScreen, GColorFolly);
+            window_set_window_handlers(theErrorScreen, (WindowHandlers) {
+                .load = loadErrorScreen,
+                .unload = unloadErrorScreen,
+            });
+        }
+        window_stack_push(theErrorScreen, true);
+    }
 }
 
 // -----------------------------------------------------------------------------

@@ -22,8 +22,7 @@
         "reviews_available_next_day": 205,
         "schedule": 206,
 
-        "command": 1000,
-        "refresh": 1001
+        "error": 1000
     },
     "resources": {
         "media": []

@@ -12,7 +12,7 @@
 
 /* Initialize default options. */
 var options = {
-        apikey: '66a6de5294912245263c3b97f2a81623'
+        apikey: ''
     },
     userInfo,
     studyQueue;
@@ -227,13 +227,25 @@ function fetchStudyQueue() {
     });
 }
 
+function fetchAllTheThings() {
+    if (options.apikey) {
+        loadStudyQueue();
+        fetchStudyQueue();
+    } else {
+        Pebble.sendAppMessage({
+            error: 1 /* ErrorNoUser */
+        }, function (result) {
+            console.log('appmsg - ack: txid ' + result.data.transactionId);
+        }, function (result) {
+            console.log('appmsg - nack: ' + JSON.stringify(result));
+        });
+    }
+}
+
 Pebble.addEventListener('ready', function() {
-    var now = Math.floor(Date.now() / 1000);
-    //console.log('it is now ' + now);
     loadOptions();
     loadUserInfo();
-    loadStudyQueue();
-    fetchStudyQueue();
+    fetchAllTheThings();
 });
 
 Pebble.addEventListener('showConfiguration', function () {
@@ -242,7 +254,7 @@ Pebble.addEventListener('showConfiguration', function () {
     var watch = {platform: 'aplite'},
         jsonOptions = JSON.stringify(options),
         encodedOptions = encodeURIComponent(jsonOptions),
-        url = 'http://files.mustacea.com/wanikani-tokidoki/1.0/config.html',
+        url = 'http://files.mustacea.com/wanikani-tokidoki/dev/config.html',
         platform,
         nonce = '';
 
@@ -253,7 +265,7 @@ Pebble.addEventListener('showConfiguration', function () {
         console.log('active watch info: ' + JSON.stringify(watch, null, 2));
     }
     url += '?platform=' + watch.platform;
-    //url += '&nonce=' + Math.floor(new Date().getTime() / 1000);
+    url += '&nonce=' + Math.floor(new Date().getTime() / 1000);
     url += '#' + encodedOptions;
     console.log('open ' + url);
     Pebble.openURL(url);
@@ -266,6 +278,7 @@ Pebble.addEventListener("webviewclosed", function (e) {
         options = JSON.parse(decodeURIComponent(e.response));
         console.log('save options: ' + JSON.stringify(options, null, 2));
         window.localStorage.setItem('options', JSON.stringify(options));
+        fetchAllTheThings();
     }
 });
 
@@ -291,7 +304,7 @@ function wanikaniRequest(item, handler) {
                 }
             }
             if (response.hasOwnProperty('error')) {
-                error = responseObject.error;
+                error = response.error;
             }
         } else {
             error = {
