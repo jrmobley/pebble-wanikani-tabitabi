@@ -28,6 +28,15 @@ const time_t kMinutesMark = 45 * 60;
 const time_t kHoursMark   = 18 * 60 * 60;
 const uint16_t kMaxItemDisplay = 42; // ha ha ha
 
+const char* kLoadMessages[] = {
+    "What does the Crabigator say?",
+    "A Crabigator says what?",
+    "Burning the turtles...",
+    "Counting turtles...",
+    "Consulting the Crabigator...",
+    "Checking your schedule...",
+};
+
 typedef struct {
     char textBuffer[128];
     const char* lessonsAvailable;
@@ -54,6 +63,7 @@ StudyQueue theStudyQueue;
 DisplayData theDisplayData;
 AppTimer* theRefreshTimer;
 int32_t theErrorCode;
+const char* theLoadMessage;
 
 static Window* createLoadScreen();
 static Window* createMainScreen();
@@ -295,6 +305,8 @@ static void messageReceived(DictionaryIterator* received, void* context) {
 
 static void init() {
 
+    srand(time(NULL));
+    
     memset(&theStudyQueue, 0, sizeof theStudyQueue);
     theErrorScreen = NULL;
     theErrorCode = 0;
@@ -340,7 +352,7 @@ static void drawLoadScreen(Layer* layer, GContext* ctx) {
     graphics_context_set_fill_color(ctx, GColorWhite);
     graphics_fill_rect(ctx, bounds, 0, GCornerNone);
 
-    const char* text = "Consulting the Crabigator";
+    const char* text = theLoadMessage;
     GFont font = fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD);
     GRect box = layer_get_bounds(layer);
     GTextOverflowMode overflow = GTextOverflowModeWordWrap;
@@ -354,6 +366,10 @@ static void drawLoadScreen(Layer* layer, GContext* ctx) {
 }
 
 static void loadLoadScreen(Window* window) {
+
+    int index = rand() % ARRAY_LENGTH(kLoadMessages);
+    theLoadMessage = kLoadMessages[index];
+
     Layer* layer = window_get_root_layer(window);
     layer_set_update_proc(layer, &drawLoadScreen);
 }

@@ -3,16 +3,10 @@ WaniKani TokiDoki
 [ ] Implement lovely fctx rendering.  Fallback to system rendering on aplite
     (for memory and text quality).
 [ ] Implement a round layout.
-[ ] no pin if review time is seconds away.  maybe configurable time window?
-[ ] Add some message roulette to the loading screen.  Also change to text layer?
-    - What does the Crabigator say?
-    - A Crabigator says what?
-    - Burning the turtles...
-    - Consulting the Crabigator...
-    - Checking your schedule...
-
+[ ] Change loading screen to text layer.
 [ ] With the 'no api key' error message, include some intro language for first time users.
-
-[ ] Configurable option to delete old pins.  Could also update them to reflect
-    results? (or at least completion status)  Either way requires storing pin
-    history in local storage.
+[ ] Fix all the use cases with the back button.
+    Maybe we don't put the main screen on the stack until it is ready?
+    From the error screen, the back button should exit the app, not drop to
+    the load screen or the main screen.
+    From the load screen, the back button should exit the app.
