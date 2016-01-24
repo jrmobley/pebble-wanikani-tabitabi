@@ -15,58 +15,97 @@ var options = {
         apikey: ''
     },
     userInfo,
-    studyQueue;
+    studyQueue,
+    timelinePins = [];
 
-function saveOptions() {
-    window.localStorage.setItem('options', JSON.stringify(options));
-}
+// ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 
-function loadOptions() {
-    var storedOptions = window.localStorage.getItem('options');
-    if (storedOptions) {
-        try {
-            options = JSON.parse(storedOptions);
-            console.log('loaded options: ' + JSON.stringify(options, null, 2));
-        } catch (ex) {
-            console.log('clear corrupt options');
-            window.localStorage.clear();
-        }
+// ---------------------------------------------------------------------------
+// Application Logic
+// ---------------------------------------------------------------------------
+
+Pebble.addEventListener('ready', function() {
+
+    options = loadObject('options', options);
+    userInfo = loadObject('user_information', userInfo);
+    studyQueue = loadObject('study_queue', studyQueue);
+    timelinePins = loadObject('timeline_pins', timelinePins);
+    updateWaniKani();
+});
+
+function updateWaniKani() {
+
+    if (options.apikey) {
+        fetchStudyQueue();
+    } else {
+        Pebble.sendAppMessage({
+            error: 1 /* ErrorNoUser */
+        }, function (result) {
+            console.log('appmsg - ack: txid ' + result.data.transactionId);
+        }, function (result) {
+            console.log('appmsg - nack: ' + JSON.stringify(result));
+        });
     }
 }
 
-function saveUserInfo() {
-    window.localStorage.setItem('user_information', JSON.stringify(userInfo));
+function fetchStudyQueue() {
+    enqueJob(function () { wanikaniRequest('study-queue', receiveStudyQueue); });
+    enqueJob(function () { wanikaniRequest('radicals', receiveTurtles); });
+    enqueJob(function () { wanikaniRequest('kanji', receiveTurtles); });
+    enqueJob(function () { wanikaniRequest('vocabulary', receiveTurtles); });
+    enqueJob(function () {
+        sendStudyQueue();
+        pushReviewPins();
+        saveObject('study_queue', studyQueue);
+        saveObject('timeline_pins', timelinePins);
+    });
+    dequeNextJob();
 }
 
-function loadUserInfo() {
-    var encodedUserInfo = window.localStorage.getItem('user_information');
-    if (encodedUserInfo) {
-        try {
-            userInfo = JSON.parse(encodedUserInfo);
-            // console.log('loaded user info: ' + JSON.stringify(userInfo, null, 2));
-        } catch (ex) {
-            console.log('clear corrupt user info');
-            window.localStorage.clear();
-        }
+function receiveStudyQueue(item, user_information, requested_information, error) {
+    if (error) {
+        console.log(JSON.stringify(error, null, 2));
+        /* Abort further job queue processing and send an error report
+           to the watch.  Report can included cached study queue data. */
+
+    } else {
+        userInfo = user_information;
+        saveObject('user_information', userInfo);
+        studyQueue = requested_information;
+        dequeNextJob();
     }
-
 }
 
-function saveStudyQueue() {
-    //console.log('save study queue: ' + JSON.stringify(studyQueue, null, 2));
-    window.localStorage.setItem('study_queue', JSON.stringify(studyQueue));
+function receiveTurtles(item, user_information, requested_information, error) {
+
+    if (error) {
+        console.log(JSON.stringify(error, null, 2));
+        /* Abort further job queue processing and send an error report
+           to the watch.  Report can included cached study queue data. */
+
+    } else if (Array.isArray(requested_information)) {
+        console.log('receiving ' + requested_information.length + ' ' + item);
+        requested_information.forEach(function (item) {
+            if (item.user_specific && item.user_specific.available_date) {
+                var slotNumber = Math.floor(item.user_specific.available_date / (60*15));
+                tallyTurtle(slotNumber);
+            }
+        });
+        dequeNextJob();
+    } else {
+        console.log('expected array of ' + item);
+    }
 }
 
-function loadStudyQueue() {
-    var encodedStudyQueue = window.localStorage.getItem('study_queue');
-    if (encodedStudyQueue) {
-        try {
-            studyQueue = JSON.parse(encodedStudyQueue);
-            //console.log('loaded study queue: ' + JSON.stringify(studyQueue, null, 2));
-        } catch (ex) {
-            console.log('clear corrupt study queue: \n' + encodedStudyQueue);
-            window.localStorage.clear();
-        }
+function tallyTurtle(slotNumber) {
+    if (!studyQueue.hasOwnProperty('schedule')) {
+        studyQueue.schedule = {};
+    }
+    if (studyQueue.schedule.hasOwnProperty(slotNumber)) {
+        ++studyQueue.schedule[slotNumber];
+    } else {
+        studyQueue.schedule[slotNumber] = 1;
     }
 }
 
@@ -75,6 +114,8 @@ function loadStudyQueue() {
  * the next_review_date and limit the schedule to 255 slots in the future
  * from then (about 2.6 days).  Cap the number of review items at 255.
  * For each slot, write two bytes to the array: slot offset and item count.
+ * NOTE: A side effect of this function is that the time slots that are not
+ * included in the message are also removed from the studyQueue.schedule.
  */
 function sendStudyQueue() {
     'use strict';
@@ -112,11 +153,9 @@ function sendStudyQueue() {
 
 function pushReviewPins() {
     var nextReviewSlot = Math.floor(studyQueue.next_review_date / (15*60)),
-        maxReviewSlot = nextReviewSlot + 24 * 4,
+        minReviewSlot = nextReviewSlot, // the earliest review found in the data
+        maxReviewSlot = nextReviewSlot + 24 * 4, // after the last review we will push a pin for
         itemTotal = 0;
-    //console.log('next review slot: ' + nextReviewSlot);
-    //console.log('max review slot: ' + maxReviewSlot);
-    //console.log(studyQueue.reviews_available + ' reviews available');
     Object.keys(studyQueue.schedule).forEach(function (timeSlot) {
         var itemCount = studyQueue.schedule[timeSlot],
             timeSlotDate = new Date(timeSlot * 15 * 60 * 1000),
@@ -124,7 +163,11 @@ function pushReviewPins() {
 
         itemTotal += itemCount;
 
-        //console.log('review ' + timeSlot + ' ' + timeSlotStr + ' +' + itemCount + ' =' + itemTotal);
+        /* Keep track of the earliest review present in the schedule (which
+           may be in the past). */
+        if (timeSlot < minReviewSlot) {
+            minReviewSlot = timeSlot;
+        }
 
         /* Push a pin for reviews that are in the future.  We can tell
            that the next_review_date is in the future if there are zero
@@ -135,8 +178,15 @@ function pushReviewPins() {
             pushReviewPin(timeSlot, itemCount, itemTotal);
         } else if (timeSlot > nextReviewSlot && timeSlot < maxReviewSlot) {
             pushReviewPin(timeSlot, itemCount, itemTotal);
+        } else {
+            /* Remove any reviews that we don't push a pin for.
+               We do this to keep our localStorage object size under control. */
+            delete studyQueue.schedule[timeSlot];
         }
     });
+
+    removeOldPins(minReviewSlot);
+    dequeNextJob();
 }
 
 function pushReviewPin(timeSlot, itemCount, itemTotal) {
@@ -170,83 +220,33 @@ function pushReviewPin(timeSlot, itemCount, itemTotal) {
                 launchCode: timeSlot
             }]
         };
+    recordTimelinePin(timeSlot);
     insertUserPin(pin, function(responseText) {
-        // nothing to do here...
+        /* Probably want to actually check the response here... */
+
+        dequeNextJob();
     });
 }
 
-function incrementSlot(slotNumber) {
-    if (!studyQueue.hasOwnProperty('schedule')) {
-        studyQueue.schedule = {};
-    }
-    if (studyQueue.schedule.hasOwnProperty(slotNumber)) {
-        ++studyQueue.schedule[slotNumber];
-    } else {
-        studyQueue.schedule[slotNumber] = 1;
+function recordTimelinePin(timeSlot) {
+    var found = timelinePins.indexOf(timeSlot);
+    if (found < 0) {
+        timelinePins.push(timeSlot);
     }
 }
 
-function fetchItems(itemType, then) {
-    console.log('fetch ' + itemType);
-    wanikaniRequest(itemType, function(user_information, requested_information, error) {
-        if (error) {
-            console.log(JSON.stringify(error, null, 2));
-        } else if (Array.isArray(requested_information)) {
-            //console.log('received ' + requested_information.length + ' ' + itemType );
-            requested_information.forEach(function (item) {
-                if (item.user_specific && item.user_specific.available_date) {
-                    var slotNumber = Math.floor(item.user_specific.available_date / (60*15));
-                    incrementSlot(slotNumber);
-                }
-            });
-            then();
-        } else {
-            console.log('expected array of ' + itemType);
-        }
-    });
-}
-
-function fetchStudyQueue() {
-    wanikaniRequest('study-queue', function(user_information, requested_information, error) {
-        if (error) {
-            console.log(JSON.stringify(error, null, 2));
-        } else {
-            userInfo = user_information;
-            saveUserInfo();
-            studyQueue = requested_information;
-            fetchItems('radicals', function () {
-                fetchItems('kanji', function () {
-                    fetchItems('vocabulary', function () {
-                        saveStudyQueue();
-                        sendStudyQueue();
-                        pushReviewPins();
-                    });
-                });
-            });
-        }
-    });
-}
-
-function fetchAllTheThings() {
-    if (options.apikey) {
-        loadStudyQueue();
-        fetchStudyQueue();
-    } else {
-        Pebble.sendAppMessage({
-            error: 1 /* ErrorNoUser */
-        }, function (result) {
-            console.log('appmsg - ack: txid ' + result.data.transactionId);
-        }, function (result) {
-            console.log('appmsg - nack: ' + JSON.stringify(result));
-        });
+function removeOldPins(minTimeSlot) {
+    var pinTimeSlot, pin;
+    while (timelinePins.length && timelinePins[0] < minTimeSlot) {
+        pinTimeSlot = timelinePins.shift();
+        pin = { id: userInfo.username + '@' + pinTimeSlot };
+        deleteUserPin(pin, dequeNextJob);
     }
 }
 
-Pebble.addEventListener('ready', function() {
-    loadOptions();
-    loadUserInfo();
-    fetchAllTheThings();
-});
+// ---------------------------------------------------------------------------
+// App Configuration
+// ---------------------------------------------------------------------------
 
 Pebble.addEventListener('showConfiguration', function () {
     'use strict';
@@ -278,11 +278,58 @@ Pebble.addEventListener("webviewclosed", function (e) {
         options = JSON.parse(decodeURIComponent(e.response));
         console.log('save options: ' + JSON.stringify(options, null, 2));
         window.localStorage.setItem('options', JSON.stringify(options));
-        fetchAllTheThings();
+        updateWaniKani();
     }
 });
 
-/******************************* wanikani lib *********************************/
+// ---------------------------------------------------------------------------
+// Local Storage
+// ---------------------------------------------------------------------------
+
+function saveObject(name, value) {
+    window.localStorage.setItem(name, JSON.stringify(value));
+}
+
+function loadObject(name, defaultValue) {
+    var encodedValue = window.localStorage.getItem(name),
+        value;
+    if (encodedValue) {
+        try {
+            value = JSON.parse(encodedValue);
+        } catch (ex) {
+            console.log('clear corrupted ' + name + ': ' + encodedValue);
+            window.localStorage.removeItem(name);
+            value = defaultValue;
+        }
+    } else {
+        value = defaultValue;
+    }
+    return value;
+}
+
+// ---------------------------------------------------------------------------
+// Job Queue
+// ---------------------------------------------------------------------------
+
+var jobQueue = [];
+var activeJob;
+
+function enqueJob(job) {
+    jobQueue.push(job);
+}
+
+function dequeNextJob() {
+    if (jobQueue.length) {
+        activeJob = jobQueue.shift();
+        activeJob();
+    } else {
+        activeJob = null;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// WaniKani API
+// ---------------------------------------------------------------------------
 
 function wanikaniRequest(item, handler) {
     var url = 'https://www.wanikani.com/api/user/' + options.apikey + '/' + item,
@@ -313,42 +360,18 @@ function wanikaniRequest(item, handler) {
             };
             console.log(this.responseText);
         }
-        handler(user_information, requested_information, error);
+        handler(item, user_information, requested_information, error);
     };
     xhr.open('GET', url);
     xhr.send();
 }
 
-/******************************* timeline lib *********************************/
+// ---------------------------------------------------------------------------
+// Timeline API
+// ---------------------------------------------------------------------------
 
 // The timeline public URL root
 var API_URL_ROOT = 'https://timeline-api.getpebble.com/';
-var timelineJobQueue = [];
-var timelineActiveJob;
-
-function timelineEnqueRequest(pin, type, callback) {
-    timelineJobQueue.push({
-        pin: pin,
-        type: type,
-        callback: callback
-    });
-    if (! timelineActiveJob) {
-        timelineDequeRequest();
-    }
-}
-
-function timelineDequeRequest() {
-    timelineActiveJob = timelineJobQueue.shift();
-    timelineRequest(timelineActiveJob.pin, timelineActiveJob.type, function (responseText) {
-        var job = timelineActiveJob;
-        timelineActiveJob = null;
-        if (timelineJobQueue.length) {
-            timelineDequeRequest();
-        } else {
-            job.callback(responseText);
-        }
-    });
-}
 
 /**
  * Send a request to the Pebble public web timeline API.
@@ -376,7 +399,7 @@ function timelineRequest(pin, type, callback) {
 
         // Send
         xhr.send(JSON.stringify(pin));
-        console.log('timeline - request sent: ' + JSON.stringify(pin));
+        console.log('timeline - request sent: ' + type + ' ' + JSON.stringify(pin));
     }, function (error) {
        console.log('timeline - error getting timeline token: ' + error);
     });
@@ -388,7 +411,7 @@ function timelineRequest(pin, type, callback) {
  * @param callback The callback to receive the responseText after the request has completed.
  */
 function insertUserPin(pin, callback) {
-    timelineEnqueRequest(pin, 'PUT', callback);
+    enqueJob(function () { timelineRequest(pin, 'PUT', callback); });
 }
 
 /**
@@ -397,7 +420,7 @@ function insertUserPin(pin, callback) {
  * @param callback The callback to receive the responseText after the request has completed.
  */
 function deleteUserPin(pin, callback) {
-    timelineRequest(pin, 'DELETE', callback);
+    enqueJob(function () { timelineRequest(pin, 'DELETE', callback); });
 }
 
 /***************************** end timeline lib *******************************/
