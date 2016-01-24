@@ -21,6 +21,33 @@ var options = {
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
 
+function localDays(date) {
+    var utcMinutes = date.getTime() / 1000 / 60,
+        minutes = utcMinutes - date.getTimezoneOffset(),
+        days = minutes / 60 / 24;
+    return Math.floor(days);
+}
+
+function formatTimeSlot(timeSlot) {
+    var date = new Date(timeSlot * 15 * 60 * 1000),
+        slotDay = localDays(date),
+        today = localDays(new Date()),
+        days = slotDay - today,
+        hour = (date.getHours() < 10 ? '0' : '') + date.getHours(),
+        minute = (date.getMinutes() < 10 ? '0' : '') + date.getMinutes(),
+        day = '';
+
+    if (days < -1) {
+        day = ' (' + -days + ' days ago)';
+    } else if (days == -1) {
+        day = ' (yesterday)';
+    } else if (days == 1) {
+        day = ' (tomorrow)';
+    } else if (days > 1) {
+        day = ' (' + days + ' days from now)';
+    }
+    return hour + ':' + minute + day;
+}
 // ---------------------------------------------------------------------------
 // Application Logic
 // ---------------------------------------------------------------------------
@@ -58,7 +85,6 @@ function fetchStudyQueue() {
         sendStudyQueue();
         pushReviewPins();
         saveObject('study_queue', studyQueue);
-        saveObject('timeline_pins', timelinePins);
     });
     dequeNextJob();
 }
@@ -231,17 +257,34 @@ function pushReviewPin(timeSlot, itemCount, itemTotal) {
 function recordTimelinePin(timeSlot) {
     var found = timelinePins.indexOf(timeSlot);
     if (found < 0) {
+        console.log('remember ' + formatTimeSlot(timeSlot));
         timelinePins.push(timeSlot);
+    } else {
+        console.log('affirm ' + formatTimeSlot(timeSlot));
     }
 }
 
 function removeOldPins(minTimeSlot) {
-    var pinTimeSlot, pin;
-    while (timelinePins.length && timelinePins[0] < minTimeSlot) {
-        pinTimeSlot = timelinePins.shift();
-        pin = { id: userInfo.username + '@' + pinTimeSlot };
-        deleteUserPin(pin, dequeNextJob);
-    }
+    var pinTimeSlot;
+    var pins = timelinePins.slice();
+    console.log('delete pins before ' + formatTimeSlot(minTimeSlot));
+    pins.forEach(function (timeSlot) {
+        var pin = { id: userInfo.username + '@' + timeSlot };
+        if (timeSlot < minTimeSlot) {
+            deleteUserPin(pin, function (response) {
+                var found = timelinePins.indexOf(timeSlot);
+                if (response === 'OK') {
+                    console.log('forget ' + formatTimeSlot(timeSlot));
+                    timelinePins.splice(found, 1);
+                }
+                dequeNextJob();
+            });
+        }
+    });
+    enqueJob(function () {
+        console.log('save timeline pins');
+        saveObject('timeline_pins', timelinePins);
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -388,6 +431,10 @@ function timelineRequest(pin, type, callback) {
   xhr.onload = function () {
     console.log('timeline - response received: ' + this.responseText);
     callback(this.responseText);
+  };
+  xhr.onerror = function () {
+      console.log('timeline - error: ' + this.statusText);
+      callback(null);
   };
   xhr.open(type, url);
 
