@@ -9,7 +9,7 @@ module.exports = function(grunt) {
     }
 
     grunt.initConfig({
-        deployment_path: getHomeDir('Dropbox/Apps/site44/files.mustacea.com/wanikani-tokidoki/dev'),
+        deployment_path: getHomeDir('Dropbox/Apps/site44/files.mustacea.com/wanikani-tabitabi/dev'),
 
         copy: {
             dist: {

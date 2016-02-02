@@ -297,7 +297,7 @@ Pebble.addEventListener('showConfiguration', function () {
     var watch = {platform: 'aplite'},
         jsonOptions = JSON.stringify(options),
         encodedOptions = encodeURIComponent(jsonOptions),
-        url = 'http://files.mustacea.com/wanikani-tokidoki/dev/config.html',
+        url = 'http://files.mustacea.com/wanikani-tabitabi/1.1/config.html',
         platform,
         nonce = '';
 
