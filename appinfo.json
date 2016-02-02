@@ -1,9 +1,8 @@
 {
     "uuid": "CE694583-C51A-4567-8376-D4758DACA3D8",
-    "shortName": "wanikani-tokidoki",
-    "longName": "wanikani-tokidoki",
+    "shortName": "wani-kani tabi-tabi",
+    "longName": "wani-kani tabi-tabi",
     "companyName": "JR Mobley",
-    "versionCode": 1,
     "versionLabel": "1.0",
     "sdkVersion": "3",
     "targetPlatforms": ["aplite", "basalt"],

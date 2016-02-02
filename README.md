@@ -1,4 +1,4 @@
-# wanikani-tokidoki
+# wanikani-tabitabi
 
 This is a Pebble SDK 3.0 app that syncronizes your
 [WaniKani](https://www.wanikani.com) review schedule to your timeline.
@@ -19,5 +19,3 @@ in the configuration!
 The app will push a pin for each of your upcoming reviews, up to 24 hours from
 the first available review.
 After running the app, check the future of your timeline!
-
-![](screenshots/screenshot1.png)

@@ -1,9 +1,8 @@
-WaniKani TokiDoki
+WaniKani TabiTabi
 
 [ ] Implement lovely fctx rendering.  Fallback to system rendering on aplite
     (for memory and text quality).
 [ ] Implement a round layout.
-[ ] Change loading screen to text layer.
 [ ] With the 'no api key' error message, include some intro language for first time users.
 [ ] Fix all the use cases with the back button.
     Maybe we don't put the main screen on the stack until it is ready?

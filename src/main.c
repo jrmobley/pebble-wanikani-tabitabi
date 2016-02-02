@@ -234,7 +234,7 @@ static void refreshMainScreen() {
         APP_LOG(APP_LOG_LEVEL_DEBUG,
             "review in %luh; digit bump in %lus; unit bump in %lus",
             nearestHour, digitBumpIn, unitBumpIn);
-        buffer += 1 + snprintf(buffer, end - buffer, "%lu %s",
+        buffer += 1 + snprintf(buffer, end - buffer, "about %lu %s",
             nearestHour, (nearestHour == 1) ? "hour" : "hours");
 
     } else {
@@ -244,7 +244,7 @@ static void refreshMainScreen() {
         APP_LOG(APP_LOG_LEVEL_DEBUG,
             "review in %lud; digit bump in %lus; unit bump in %lus",
             nearestDay, digitBumpIn, unitBumpIn);
-        buffer += 1 + snprintf(buffer, end - buffer, "%lu %s",
+        buffer += 1 + snprintf(buffer, end - buffer, "about %lu %s",
             nearestDay, (nearestDay == 1) ? "day" : "days");
     }
 
@@ -306,7 +306,7 @@ static void messageReceived(DictionaryIterator* received, void* context) {
 static void init() {
 
     srand(time(NULL));
-    
+
     memset(&theStudyQueue, 0, sizeof theStudyQueue);
     theErrorScreen = NULL;
     theErrorCode = 0;
