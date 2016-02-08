@@ -52,7 +52,7 @@ function getQueryParam(variable, defaultValue) {
 $().ready(function () {
     'use strict';
     var platform = getQueryParam('platform', 'aplite'),
-        version = getQueryParam('version', '1.1'),
+        version = getQueryParam('version', '1.2'),
         returnTo = getQueryParam('return_to', 'pebblejs://close#');
 
     $('#b-cancel').on('click', function () {

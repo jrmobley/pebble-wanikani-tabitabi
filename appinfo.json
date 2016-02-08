@@ -3,7 +3,7 @@
     "shortName": "wani-kani tabi-tabi",
     "longName": "wani-kani tabi-tabi",
     "companyName": "JR Mobley",
-    "versionLabel": "1.1",
+    "versionLabel": "1.2",
     "sdkVersion": "3",
     "targetPlatforms": ["aplite", "basalt", "chalk"],
     "capabilities": ["configurable"],

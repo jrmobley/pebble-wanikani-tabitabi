@@ -297,7 +297,7 @@ Pebble.addEventListener('showConfiguration', function () {
     var watch = {platform: 'aplite'},
         jsonOptions = JSON.stringify(options),
         encodedOptions = encodeURIComponent(jsonOptions),
-        url = 'http://files.mustacea.com/wanikani-tabitabi/1.1/config.html',
+        url = 'http://files.mustacea.com/wanikani-tabitabi/1.2/config.html',
         platform,
         nonce = '';
 
@@ -308,7 +308,7 @@ Pebble.addEventListener('showConfiguration', function () {
         console.log('active watch info: ' + JSON.stringify(watch, null, 2));
     }
     url += '?platform=' + watch.platform;
-    url += '&nonce=' + Math.floor(new Date().getTime() / 1000);
+    //url += '&nonce=' + Math.floor(new Date().getTime() / 1000);
     url += '#' + encodedOptions;
     console.log('open ' + url);
     Pebble.openURL(url);
