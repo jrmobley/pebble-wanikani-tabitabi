@@ -444,92 +444,105 @@ void setErrorCode(int32_t errorCode) {
 // Main Screen functions
 // -----------------------------------------------------------------------------
 
-static void drawAvailableItems(GContext* ctx, GPoint at, const char* quantity, const char* label) {
+static void drawText(GContext* ctx, int16_t x, int16_t y, int fontSize, const char* string, GTextAlignment alignment) {
 
-    GFont font;
+    const char* fontKey;
+         if (fontSize == 28) fontKey = FONT_KEY_GOTHIC_28;
+    else if (fontSize == 24) fontKey = FONT_KEY_GOTHIC_24;
+    else if (fontSize == 14) fontKey = FONT_KEY_GOTHIC_14;
+    else return;
+
+    GFont font = fonts_get_system_font(fontKey);
+    GTextOverflowMode overflow = GTextOverflowModeWordWrap;
     GRect box;
-
-    // fill circle
-    GPoint center = { at.x, at.y };
-    int16_t radius = 23;
-    graphics_context_set_fill_color(ctx, PBL_IF_COLOR_ELSE(GColorDarkGray, GColorBlack));
-    graphics_fill_circle(ctx, center, radius);
-
-    // draw quantity
-    box.origin.x = at.x - radius + 1;  box.origin.y = at.y - 19 + 1;
-    box.size.w   = radius * 2;     box.size.h   = 18;
-    font = fonts_get_system_font(FONT_KEY_GOTHIC_28);
-    graphics_context_set_text_color(ctx, GColorWhite);
-    graphics_draw_text(ctx, quantity, font, box, GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
-
-    // draw label
-    box.origin.x = at.x - 36;    box.origin.y = at.y + 22;
-    box.size.w   = 72;           box.size.h   = 9;
-    font = fonts_get_system_font(FONT_KEY_GOTHIC_14);
-    graphics_context_set_text_color(ctx, GColorBlack);
-    graphics_draw_text(ctx, label, font, box, GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
-
-}
-
-static void drawFutureItems(GContext* ctx, GPoint at, const char* quantity, const char* label) {
-
-    GFont font;
-    GRect frame;
-
-    // draw quantity
-    frame.origin.x = at.x + 0;    frame.origin.y = at.y - 10;
-    frame.size.w   = 72;          frame.size.h   = 14;
-    font = fonts_get_system_font(FONT_KEY_GOTHIC_24);
-    graphics_context_set_text_color(ctx, GColorBlack);
-    graphics_draw_text(ctx, quantity, font, frame, GTextOverflowModeFill, GTextAlignmentCenter, NULL);
-
-    // draw label
-    frame.origin.x = at.x + 0;    frame.origin.y = at.y + 17;
-    frame.size.w   = 72;          frame.size.h   = 9;
-    font = fonts_get_system_font(FONT_KEY_GOTHIC_14);
-    graphics_context_set_text_color(ctx, GColorBlack);
-    graphics_draw_text(ctx, label, font, frame, GTextOverflowModeFill, GTextAlignmentCenter, NULL);
-
-}
-
-static void drawNextReview(GContext* ctx, const char* value, const char* label) {
-
-    GFont font;
-    GRect frame;
-    graphics_context_set_text_color(ctx, GColorBlack);
-
-    // draw time
-    frame.origin.x = 0;    frame.origin.y = 71;
-    frame.size.w   = 144;  frame.size.h   = 14;
-    font = fonts_get_system_font(FONT_KEY_GOTHIC_24);
-    graphics_draw_text(ctx, value, font, frame, GTextOverflowModeFill, GTextAlignmentCenter, NULL);
-
-    // draw label
-    frame.origin.x = 0;    frame.origin.y = 98;
-    frame.size.w   = 144;  frame.size.h   = 9;
-    font = fonts_get_system_font(FONT_KEY_GOTHIC_14);
-    graphics_draw_text(ctx, label, font, frame, GTextOverflowModeFill, GTextAlignmentCenter, NULL);
+    box.size.w = 144;
+    box.size.h = fontSize;
+    box.origin.y = y - fontSize;
+    switch (alignment) {
+        case GTextAlignmentLeft: box.origin.x = x; break;
+        case GTextAlignmentCenter: box.origin.x = x - box.size.w / 2; break;
+        case GTextAlignmentRight: box.origin.x = x - box.size.w; break;
+    }
+    graphics_draw_text(ctx, string, font, box, overflow, alignment, NULL);
 }
 
 static void drawMainScreen(Layer* layer, GContext* ctx) {
 
     DisplayData* display = &theDisplayData;
 
+#if defined(PBL_ROUND)
+int16_t availablesWidth = 32;
+int16_t upcomingsWidth  = 8;
+GTextAlignment upcomingHourAlignment = GTextAlignmentRight;
+GTextAlignment upcomingDayAlignment = GTextAlignmentLeft;
+
+int16_t         circlesBaseline = -45;
+int16_t availableValuesBaseline = -35;
+int16_t availableLabelsBaseline = -9;
+int16_t nextReviewValueBaseline = 15;
+int16_t nextReviewLabelBaseline = 30;
+int16_t         dividerBaseline = 38;
+int16_t  upcomingLabelsBaseline = 55;
+int16_t  upcomingValuesBaseline = 75;
+
+#else
+int16_t availablesWidth = 34;
+int16_t upcomingsWidth  = 36;
+GTextAlignment upcomingHourAlignment = GTextAlignmentCenter;
+GTextAlignment upcomingDayAlignment = GTextAlignmentCenter;
+
+int16_t         circlesBaseline = -54;
+int16_t availableValuesBaseline = -44;
+int16_t availableLabelsBaseline = -18;
+int16_t nextReviewValueBaseline = 11;
+int16_t nextReviewLabelBaseline = 28;
+int16_t         dividerBaseline = 38;
+int16_t  upcomingValuesBaseline = 60;
+int16_t  upcomingLabelsBaseline = 77;
+#endif
+
     GRect bounds = layer_get_bounds(layer);
+    int16_t centerCol           = bounds.size.w / 2;
+    int16_t availableLessonsCol = centerCol - availablesWidth;
+    int16_t availableReviewsCol = centerCol + availablesWidth;
+    int16_t upcomingHourCol     = centerCol - upcomingsWidth;
+    int16_t upcomingDayCol      = centerCol + upcomingsWidth;
+    int16_t centerRow           = bounds.size.h / 2;
+    int16_t dividerRow          = centerRow + dividerBaseline;
+    int16_t circlesRow          = centerRow + circlesBaseline;
+    int16_t availableValuesRow  = centerRow + availableValuesBaseline;
+    int16_t availableLabelsRow  = centerRow + availableLabelsBaseline;
+    int16_t nextReviewValueRow  = centerRow + nextReviewValueBaseline;
+    int16_t nextReviewLabelRow  = centerRow + nextReviewLabelBaseline;
+    int16_t upcomingValuesRow   = centerRow + upcomingValuesBaseline;
+    int16_t upcomingLabelsRow   = centerRow + upcomingLabelsBaseline;
+
+
     graphics_context_set_fill_color(ctx, GColorWhite);
     graphics_fill_rect(ctx, bounds, 0, GCornerNone);
 
-    drawAvailableItems(ctx, GPoint( 38, 30), display->lessonsAvailable, "Lessons");
-    drawAvailableItems(ctx, GPoint(106, 30), display->reviewsAvailable, "Reviews");
-
-    drawNextReview(ctx, display->nextReview, "Next Review");
+    int16_t radius = 23;
+    graphics_context_set_fill_color(ctx, PBL_IF_COLOR_ELSE(GColorDarkGray, GColorBlack));
+    graphics_fill_circle(ctx, GPoint(availableLessonsCol, circlesRow), radius);
+    graphics_fill_circle(ctx, GPoint(availableReviewsCol, circlesRow), radius);
 
     graphics_context_set_stroke_color(ctx, GColorBlack);
-    graphics_draw_line(ctx, GPoint(0, 122), GPoint(144, 122));
-    graphics_draw_line(ctx, GPoint(72, 122), GPoint(72, 168));
+    graphics_draw_line(ctx, GPoint(0, dividerRow), GPoint(bounds.size.w, dividerRow));
+    graphics_draw_line(ctx, GPoint(centerCol, dividerRow), GPoint(centerCol, bounds.size.h));
 
-    drawFutureItems(ctx, GPoint( 0, 130), display->reviewsAvailableNextHour, "Next Hour");
-    drawFutureItems(ctx, GPoint(72, 130), display->reviewsAvailableNextDay,  "Next Day");
+    graphics_context_set_text_color(ctx, GColorWhite);
+    drawText(ctx, availableLessonsCol, availableValuesRow, 28, display->lessonsAvailable, GTextAlignmentCenter);
+    drawText(ctx, availableReviewsCol, availableValuesRow, 28, display->reviewsAvailable, GTextAlignmentCenter);
+
+    graphics_context_set_text_color(ctx, GColorBlack);
+    drawText(ctx, availableLessonsCol, availableLabelsRow, 14, "Lessons", GTextAlignmentCenter);
+    drawText(ctx, availableReviewsCol, availableLabelsRow, 14, "Reviews", GTextAlignmentCenter);
+    drawText(ctx,           centerCol, nextReviewValueRow, 24, display->nextReview, GTextAlignmentCenter);
+    drawText(ctx,           centerCol, nextReviewLabelRow, 14, "Next Review", GTextAlignmentCenter);
+    drawText(ctx,     upcomingHourCol,  upcomingValuesRow, 24, display->reviewsAvailableNextHour, upcomingHourAlignment);
+    drawText(ctx,      upcomingDayCol,  upcomingValuesRow, 24, display->reviewsAvailableNextDay, upcomingDayAlignment);
+    drawText(ctx,     upcomingHourCol,  upcomingLabelsRow, 14, "Next Hour", upcomingHourAlignment);
+    drawText(ctx,      upcomingDayCol,  upcomingLabelsRow, 14, "Next Day", upcomingDayAlignment);
 }
 
 static void loadMainScreen(Window* window) {
