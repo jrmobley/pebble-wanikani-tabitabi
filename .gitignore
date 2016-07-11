@@ -3,3 +3,5 @@
 build
 .Rproj.user
 .lock-waf_darwin_build
+
+node_modules/

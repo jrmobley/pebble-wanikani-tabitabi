@@ -2,16 +2,6 @@
 #include <pebble.h>
 
 enum {
-    AppKeyUsername = 101,
-
-    AppKeyLessonsAvailable = 201,
-    AppKeyReviewsAvailable = 202,
-    AppKeyNextReviewDate = 203,
-    AppKeyReviewsAvailableNextHour = 204,
-    AppKeyReviewsAvailableNextDay = 205,
-    AppKeySchedule = 206,
-
-    AppKeyError = 1000,
     ErrorNoKey = 1,
     ErrorNoUser = 2,
 };
@@ -271,25 +261,25 @@ static void messageReceived(DictionaryIterator* received, void* context) {
 
     for (Tuple* t = dict_read_first(received); t != NULL; t = dict_read_next(received)) {
 
-        if (AppKeyError == t->key) {
+        if (MESSAGE_KEY_ERROR == t->key) {
             error = t->value->int32;
 
-        } else if (AppKeyLessonsAvailable == t->key) {
+        } else if (MESSAGE_KEY_LESSONS_AVAILABLE == t->key) {
             q->lessonsAvailable = t->value->int32;
 
-        } else if (AppKeyReviewsAvailable == t->key) {
+        } else if (MESSAGE_KEY_REVIEWS_AVAILABLE == t->key) {
             q->reviewsAvailable = t->value->int32;
 
-        } else if (AppKeyNextReviewDate == t->key) {
+        } else if (MESSAGE_KEY_NEXT_REVIEW_DATE == t->key) {
             q->nextReviewDate = t->value->uint32;
 
-        } else if (AppKeyReviewsAvailableNextHour == t->key) {
+        } else if (MESSAGE_KEY_REVIEWS_AVAILABLE_NEXT_HOUR == t->key) {
             q->reviewsAvailableNextHour = t->value->int32;
 
-        } else if (AppKeyReviewsAvailableNextDay == t->key) {
+        } else if (MESSAGE_KEY_REVIEWS_AVAILABLE_NEXT_DAY == t->key) {
             q->reviewsAvailableNextDay = t->value->int32;
 
-        } else if (AppKeySchedule == t->key && t->type == TUPLE_BYTE_ARRAY) {
+        } else if (MESSAGE_KEY_SCHEDULE == t->key && t->type == TUPLE_BYTE_ARRAY) {
             q->scheduleLength = t->length;
             q->schedule = realloc(q->schedule, t->length);
             memcpy(q->schedule, t->value->data, t->length);

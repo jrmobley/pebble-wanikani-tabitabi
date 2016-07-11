@@ -11,12 +11,14 @@
 */
 
 /* Initialize default options. */
-var options = {
-        apikey: ''
-    },
-    userInfo,
+var userInfo,
     studyQueue,
     timelinePins = [];
+
+var Clay = require('pebble-clay');
+var clayConfig = require('./config.js');
+var clay = new Clay(clayConfig, null, { autoHandleEvents: false });
+var messageKeys = require('message_keys');
 
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
@@ -54,33 +56,28 @@ function formatTimeSlot(timeSlot) {
 
 Pebble.addEventListener('ready', function() {
 
-    options = loadObject('options', options);
     userInfo = loadObject('user_information', userInfo);
     studyQueue = loadObject('study_queue', studyQueue);
     timelinePins = loadObject('timeline_pins', timelinePins);
-    updateWaniKani();
-});
 
-function updateWaniKani() {
-
-    if (options.apikey) {
-        fetchStudyQueue();
+    if (userInfo && userInfo.hasOwnProperty('apikey')) {
+        fetchStudyQueue(userInfo.apikey);
     } else {
-        Pebble.sendAppMessage({
-            error: 1 /* ErrorNoUser */
-        }, function (result) {
+        var message = {};
+        message[messageKeys.ERROR] = 1;
+        Pebble.sendAppMessage(message, function (result) {
             console.log('appmsg - ack: txid ' + result.data.transactionId);
         }, function (result) {
             console.log('appmsg - nack: ' + JSON.stringify(result));
         });
     }
-}
+});
 
-function fetchStudyQueue() {
-    enqueJob(function () { wanikaniRequest('study-queue', receiveStudyQueue); });
-    enqueJob(function () { wanikaniRequest('radicals', receiveTurtles); });
-    enqueJob(function () { wanikaniRequest('kanji', receiveTurtles); });
-    enqueJob(function () { wanikaniRequest('vocabulary', receiveTurtles); });
+function fetchStudyQueue(apikey) {
+    enqueJob(function () { wanikaniRequest(apikey, 'study-queue', receiveStudyQueue); });
+    enqueJob(function () { wanikaniRequest(apikey, 'radicals', receiveTurtles); });
+    enqueJob(function () { wanikaniRequest(apikey, 'kanji', receiveTurtles); });
+    enqueJob(function () { wanikaniRequest(apikey, 'vocabulary', receiveTurtles); });
     enqueJob(function () {
         sendStudyQueue();
         pushReviewPins();
@@ -148,13 +145,13 @@ function sendStudyQueue() {
     var nextReviewDate = new Date(studyQueue.next_review_date * 1000),
         nextReviewSlot = Math.floor(studyQueue.next_review_date / (60*15)),
         message = {
-            username: userInfo.username,
-            lessons_available: studyQueue.lessons_available,
-            reviews_available: studyQueue.reviews_available,
-            next_review_date: studyQueue.next_review_date,
-            reviews_available_next_hour: studyQueue.reviews_available_next_hour,
-            reviews_available_next_day: studyQueue.reviews_available_next_day,
-            schedule: []
+            USERNAME: userInfo.username,
+            LESSONS_AVAILABLE: studyQueue.lessons_available,
+            REVIEWS_AVAILABLE: studyQueue.reviews_available,
+            NEXT_REVIEW_DATE: studyQueue.next_review_date,
+            REVIEWS_AVAILABLE_NEXT_HOUR: studyQueue.reviews_available_next_hour,
+            REVIEWS_AVAILABLE_NEXT_DAY: studyQueue.reviews_available_next_day,
+            SCHEDULE: []
         };
 
     //console.log('next review ' + nextReviewDate.toDateString() + ' @ ' + nextReviewDate.toTimeString());
@@ -164,8 +161,8 @@ function sendStudyQueue() {
         var slotEnd = 256;
         var slotOffset = timeSlot - nextReviewSlot;
         if (slotOffset >= slotBegin && slotOffset < slotEnd) {
-            message.schedule.push(slotOffset);
-            message.schedule.push(Math.min(255, itemCount));
+            message.SCHEDULE.push(slotOffset);
+            message.SCHEDULE.push(Math.min(255, itemCount));
         }
     });
 
@@ -293,35 +290,35 @@ function removeOldPins(minTimeSlot) {
 
 Pebble.addEventListener('showConfiguration', function () {
     'use strict';
-    console.log('show configuration');
-    var watch = {platform: 'aplite'},
-        jsonOptions = JSON.stringify(options),
-        encodedOptions = encodeURIComponent(jsonOptions),
-        url = 'http://files.mustacea.com/wanikani-tabitabi/1.2/config.html',
-        platform,
-        nonce = '';
 
-    //url = 'http://127.0.0.1:55683/config/index.html';
+    /* Request the config URL from Clay.  Clay will load current settings
+       from localStorage and use them to generate the config page, but they
+       are not cached within Clay for access by clients (us). */
+    var configURL = clay.generateUrl();
 
-    if (Pebble.getActiveWatchInfo) {
-        watch = Pebble.getActiveWatchInfo();
-        console.log('active watch info: ' + JSON.stringify(watch, null, 2));
-    }
-    url += '?platform=' + watch.platform;
-    //url += '&nonce=' + Math.floor(new Date().getTime() / 1000);
-    url += '#' + encodedOptions;
-    console.log('open ' + url);
-    Pebble.openURL(url);
+    /* Show the config page. */
+    Pebble.openURL(configURL);
 });
 
-Pebble.addEventListener("webviewclosed", function (e) {
+Pebble.addEventListener('webviewclosed', function (e) {
     'use strict';
     console.log('Webview closed.');
     if (e.response && e.response.length) {
-        options = JSON.parse(decodeURIComponent(e.response));
-        console.log('save options: ' + JSON.stringify(options, null, 2));
-        window.localStorage.setItem('options', JSON.stringify(options));
-        updateWaniKani();
+
+        var settings, apikey;
+
+        /* Request decoded settings from Clay.  As a side-effect,
+           Clay will save the settings to local storage. */
+        settings = clay.getSettings(e.response);
+
+        /* If there were any settings that the C code was interested in,
+           this would be the place to extract them, convert them, and
+           send them. */
+
+        apikey = settings[messageKeys.PUBLIC_API_KEY];
+        if (apikey) {
+            fetchStudyQueue(apikey);
+        }
     }
 });
 
@@ -339,6 +336,7 @@ function loadObject(name, defaultValue) {
     if (encodedValue) {
         try {
             value = JSON.parse(encodedValue);
+            console.log(name + ': ' + JSON.stringify(value, null, 2));
         } catch (ex) {
             console.log('clear corrupted ' + name + ': ' + encodedValue);
             window.localStorage.removeItem(name);
@@ -374,8 +372,8 @@ function dequeNextJob() {
 // WaniKani API
 // ---------------------------------------------------------------------------
 
-function wanikaniRequest(item, handler) {
-    var url = 'https://www.wanikani.com/api/user/' + options.apikey + '/' + item,
+function wanikaniRequest(apikey, item, handler) {
+    var url = 'https://www.wanikani.com/api/user/' + apikey + '/' + item,
         xhr = new XMLHttpRequest();
 
     xhr.onload = function () {
@@ -386,6 +384,7 @@ function wanikaniRequest(item, handler) {
         if (response) {
             if (response.hasOwnProperty('user_information')) {
                 user_information = response.user_information;
+                user_information.apikey = apikey;
             }
             if (response.hasOwnProperty('requested_information')) {
                 requested_information = response.requested_information;
