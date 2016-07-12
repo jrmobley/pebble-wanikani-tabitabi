@@ -254,6 +254,56 @@ static void refreshMainScreen() {
     layer_mark_dirty(layer);
 }
 
+#if PBL_API_EXISTS(app_glance_reload)
+
+static const char* glanceSliceSubtitle(int lessons, int reviews) {
+    snprintf(theDisplayData.textBuffer, ARRAY_LENGTH(theDisplayData.textBuffer),
+        "L:%d R:%d", lessons, reviews);
+    return theDisplayData.textBuffer;
+}
+
+static void refreshAppGlance(AppGlanceReloadSession* session, size_t limit, void* context) {
+
+    StudyQueue* q = (StudyQueue*)context;
+    int baseTimeSlot = q->nextReviewDate / kSlotSize;
+    uint16_t reviewsAvailable = q->reviewsAvailable;
+
+    /* We will create one slice for the currently available reviews, and one
+       slice for each upcoming review in the schedule, but limit the total
+       slices as indicated by the system. */
+    size_t sliceCount = 1 + q->scheduleLength / 2;
+    if (sliceCount > limit) {
+        sliceCount = limit;
+    }
+
+    AppGlanceSlice slice;
+    slice.layout.icon = RESOURCE_ID_GLANCE_ICON;
+    slice.layout.subtitle_template_string = glanceSliceSubtitle(q->lessonsAvailable, reviewsAvailable);
+    slice.expiration_time = APP_GLANCE_SLICE_NO_EXPIRATION;
+
+    for (size_t k = 0; k < sliceCount - 1; ++k) {
+        int timeSlot = q->schedule[k * 2];
+        int itemCount = q->schedule[k * 2 + 1];
+        slice.expiration_time = (baseTimeSlot + timeSlot) * kSlotSize;
+        const AppGlanceResult result = app_glance_add_slice(session, slice);
+        if (result != APP_GLANCE_RESULT_SUCCESS) {
+            APP_LOG(APP_LOG_LEVEL_ERROR, "AppGlance Error: %d", result);
+        }
+
+        reviewsAvailable += itemCount;
+        slice.layout.subtitle_template_string = glanceSliceSubtitle(q->lessonsAvailable, reviewsAvailable);
+    }
+
+    slice.expiration_time = APP_GLANCE_SLICE_NO_EXPIRATION;
+    const AppGlanceResult result = app_glance_add_slice(session, slice);
+    if (result != APP_GLANCE_RESULT_SUCCESS) {
+        APP_LOG(APP_LOG_LEVEL_ERROR, "AppGlance Error: %d", result);
+    }
+
+}
+
+#endif // PBL_API_EXISTS(app_glance_reload)
+
 static void messageReceived(DictionaryIterator* received, void* context) {
 
     StudyQueue* q = &theStudyQueue;
@@ -323,6 +373,10 @@ static void deinit() {
     window_destroy(theLoadScreen);
     window_destroy(theMainScreen);
     window_destroy(theErrorScreen);
+
+#if PBL_API_EXISTS(app_glance_reload)
+    app_glance_reload(refreshAppGlance, &theStudyQueue);
+#endif
 }
 
 int main() {
