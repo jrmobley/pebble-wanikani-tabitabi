@@ -8,7 +8,7 @@
 
     WaniKani.prototype = {
 
-        request: function (item, handler) {
+        request: function (item, receiver) {
             var self = this,
                 url = 'https://www.wanikani.com/api/user/' + this.apikey + '/' + item,
                 xhr = new XMLHttpRequest();
@@ -30,16 +30,20 @@
                         }
                     }
                     if (response.hasOwnProperty('error')) {
+                        /* A wanikani error is an object of with two string
+                           properties: code and message. */
                         error = response.error;
                     }
                 } else {
+                    /* Construct an error object with the same format as a
+                       wanikani error (as above). */
                     error = {
-                        code: 'incomprehensible_response',
-                        message: 'Could not parse response as JSON'
+                        code: 'server_error',
+                        message: responseText
                     };
                     console.log(this.responseText);
                 }
-                handler(item, user_information, requested_information, error);
+                receiver(item, user_information, requested_information, error);
             };
             xhr.open('GET', url);
             xhr.send();

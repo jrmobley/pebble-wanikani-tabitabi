@@ -28,14 +28,24 @@ static void message_received(DictionaryIterator* received, void* context) {
         window_stack_remove(s_load_screen, false);
     }
 
+    t = dict_find(received, MESSAGE_KEY_PROGRESS);
+    if (t) {
+        strncpy(s_result_text, t->value->cstring, sizeof s_result_text);
+        layer_mark_dirty(window_get_root_layer(s_load_screen));
+        window_stack_remove(s_result_screen, true);
+        if (!window_stack_contains_window(s_load_screen)) {
+            window_stack_push(s_load_screen, true);
+        }
+    }
+
     t = dict_find(received, MESSAGE_KEY_SUCCESS);
     if (t) {
         strncpy(s_result_text, t->value->cstring, sizeof s_result_text);
-        window_set_background_color(s_result_screen, GColorWhite);
+        window_set_background_color(s_result_screen, GColorScreaminGreen);
         s_result_text_color = GColorBlack;
         window_stack_push(s_result_screen, true);
         window_stack_remove(s_load_screen, false);
-        app_timer_register(2000, &success_auto_close, NULL);
+        app_timer_register(6000, &success_auto_close, NULL);
     }
 
     t = dict_find(received, MESSAGE_KEY_ERROR);
@@ -50,6 +60,8 @@ static void message_received(DictionaryIterator* received, void* context) {
 }
 
 int main() {
+
+    s_result_text[0] = '\0';
 
     s_load_screen = create_load_screen();
     window_stack_push(s_load_screen, true);
@@ -103,6 +115,10 @@ static void draw_load_screen(Layer* layer, GContext* ctx) {
     box.origin.y = (box.size.h - size.h) / 2;
 
     graphics_draw_text(ctx, text, font, box, overflow, alignment, NULL);
+    if (s_result_text[0]) {
+        box.origin.y += size.h;
+        graphics_draw_text(ctx, s_result_text, font, box, overflow, alignment, NULL);
+    }
 }
 
 static void load_load_screen(Window* window) {
@@ -140,16 +156,14 @@ static void load_result_screen(Window* window) {
     text_layer_set_text_alignment(s_result_text_layer, GTextAlignmentCenter);
     text_layer_set_overflow_mode(s_result_text_layer, GTextOverflowModeWordWrap);
     text_layer_set_font(s_result_text_layer, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD));
-    text_layer_set_text_color(s_result_text_layer, GColorBlack);
+    text_layer_set_text_color(s_result_text_layer, s_result_text_color);
     text_layer_set_background_color(s_result_text_layer, GColorClear);
-
     text_layer_set_text(s_result_text_layer, s_result_text);
+    layer_add_child(window_layer, text_layer_get_layer(s_result_text_layer));
 
 #if defined(PBL_ROUND)
     text_layer_enable_screen_text_flow_and_paging(s_result_text_layer, 3);
 #endif
-
-    layer_add_child(window_layer, text_layer_get_layer(s_result_text_layer));
 }
 
 static void unload_result_screen(Window* window) {

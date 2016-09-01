@@ -17,26 +17,37 @@
             var self = this;
             if (self.jobQueue.length) {
                 self.activeJob = self.jobQueue.shift();
-                self.activeJob(function () { self.dequeNextJob(); });
+                self.activeJob(
+                    function () { self.dequeNextJob(); }, // next
+                    function () { self.cancelAllJobs(); } // abort
+                );
             } else {
                 self.activeJob = null;
             }
         },
 
-        enqueMessage: function (message) {
+        cancelAllJobs: function () {
             var self = this;
-            self.enqueJob(function () {
-                //console.log('Send: ' + JSON.stringify(message));
+            self.jobQueue = [];
+            self.activeJob = null;
+        },
+
+        enqueMessage: function (message, log) {
+            var self = this;
+            self.enqueJob(function (next, abort) {
+                if (log) {
+                    console.log(log);
+                }
                 Pebble.sendAppMessage(
                     message,
                 function(data) {
-                    self.dequeNextJob();
+                    next();
                 }, function(data, error) {
                     console.log('Error sending message to Pebble device: ');
                     console.log('message', JSON.stringify(message));
                     console.log('data: ', JSON.stringify(data));
                     console.log('error: ', JSON.stringify(error));
-                    self.dequeNextJob();
+                    abort();
                 });
             });
         }

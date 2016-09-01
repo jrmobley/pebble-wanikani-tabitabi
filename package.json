@@ -48,6 +48,7 @@
     "uuid": "ce694583-c51a-4567-8376-d4758daca3d8",
     "messageKeys": [
       "PUBLIC_API_KEY",
+      "PROGRESS",
       "SUCCESS",
       "ERROR"
     ],

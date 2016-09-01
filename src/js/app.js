@@ -27,70 +27,90 @@ var jobber = new Jobber();
 var WaniKani = require('./wanikani.js');
 
 // ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
 // Application Logic
 // ---------------------------------------------------------------------------
 
 Pebble.addEventListener('ready', function () {
 
     userInfo = loadObject('user_information', userInfo);
-    //studyQueue = loadObject('study_queue', studyQueue);
     timelinePins = loadObject('timeline_pins', timelinePins);
 
     if (userInfo && userInfo.hasOwnProperty('apikey')) {
         var wanikani = new WaniKani(userInfo.apikey);
         fetchStudyQueue(wanikani);
     } else {
-        var message = {};
-        message[messageKeys.PUBLIC_API_KEY] = 1;
-        Pebble.sendAppMessage(message, function (result) {
-            console.log('appmsg - ack: txid ' + result.data.transactionId);
-        }, function (result) {
-            console.log('appmsg - nack: ' + JSON.stringify(result));
+        var message = {
+            PUBLIC_API_KEY: 1
+        };
+        Pebble.sendAppMessage(message, function (data) {
+            console.log('Requested WaniKani Public API Key. (' + data.transactionId + ')');
+        }, function (data, error) {
+            console.error(error);
+            console.error('Could not send Public API Key request.');
         });
     }
 });
 
+function reportProgress(type, text) {
+    var message = {};
+    message[type] = text;
+    jobber.enqueMessage(message, 'Report progress: ' + text);
+}
+
 function fetchStudyQueue(wanikani) {
-    jobber.enqueJob(function () { wanikani.request('study-queue', receiveStudyQueue); });
-    jobber.enqueJob(function () { wanikani.request('radicals', receiveTurtles); });
-    jobber.enqueJob(function () { wanikani.request('kanji', receiveTurtles); });
-    jobber.enqueJob(function () { wanikani.request('vocabulary', receiveTurtles); });
+
+    reportProgress('PROGRESS', 'Study Queue');
+    jobber.enqueJob(function (next, abort) { wanikani.request('study-queue', receiveStudyQueue); });
+
+    reportProgress('PROGRESS', 'Radicals');
+    jobber.enqueJob(function (next, abort) { wanikani.request('radicals', receiveTurtles); });
+
+    reportProgress('PROGRESS', 'Kanji');
+    jobber.enqueJob(function (next, abort) { wanikani.request('kanji', receiveTurtles); });
+
+    reportProgress('PROGRESS', 'Vocabulary');
+    jobber.enqueJob(function (next, abort) { wanikani.request('vocabulary', receiveTurtles); });
+
+    reportProgress('PROGRESS', 'Timeline');
 
     var timelineToken;
-    jobber.enqueJob(function (next) {
+    jobber.enqueJob(function (next, abort) {
         Pebble.getTimelineToken(function (token) {
             console.log('Aquired timeline token: ' + token);
             timelineToken = token;
             next();
-          }, function (error) {
-             console.log('Could not get timeline token: ' + error);
-          });
+        }, function (error) {
+            abort();
+            console.error(error);
+            terminateWithError('Could not access timeline token.');
+        });
     });
 
-    jobber.enqueJob(function () {
+    jobber.enqueJob(function (next, abort) {
         /* All of these functions can prepare their jobs once the above jobs
            have completed. */
         finalizeSchedule();
-        pushReviewPins(timelineToken); /* enqueues several jobs */
+
+        reportProgress('PROGRESS', 'Glance');
         updateAppGlance(); /* enqueues a job */
 
-        var message = {};
-        message[messageKeys.SUCCESS] = "Hooray, I'm useful!";
-        jobber.enqueMessage(message);
+        reportProgress('PROGRESS', 'Pins');
+        pushReviewPins(timelineToken); /* enqueues several jobs */
 
-        jobber.dequeNextJob();
+        var message = {
+            SUCCESS: 'Review schedule has been updated!  Results should appear on the Timeline within 15 minutes.'
+        };
+        jobber.enqueMessage(message, 'Reporting success to the watch.');
+
+        next();
     });
     jobber.dequeNextJob();
 }
 
 function receiveStudyQueue(item, user_information, requested_information, error) {
     if (error) {
-        console.log(JSON.stringify(error, null, 2));
-        /* Abort further job queue processing and send an error report
-           to the watch.  Report can included cached study queue data. */
+        jobber.cancelAllJobs();
+        terminateWithError(error.message);
 
     } else {
         userInfo = user_information;
@@ -112,9 +132,8 @@ function receiveStudyQueue(item, user_information, requested_information, error)
 function receiveTurtles(item, user_information, requested_information, error) {
 
     if (error) {
-        console.log(JSON.stringify(error, null, 2));
-        /* Abort further job queue processing and send an error report
-           to the watch.  Report can included cached study queue data. */
+        jobber.cancelAllJobs();
+        terminateWithError(error.message);
 
     } else if (Array.isArray(requested_information)) {
         console.log('receiving ' + requested_information.length + ' ' + item);
@@ -128,8 +147,10 @@ function receiveTurtles(item, user_information, requested_information, error) {
             }
         });
         jobber.dequeNextJob();
+
     } else {
-        console.log('expected array of ' + item);
+        jobber.cancelAllJobs();
+        terminateWithError('Sorry, I am confused by the WaniKani ' + item + '.');
     }
 }
 
@@ -187,7 +208,6 @@ function finalizeSchedule() {
     });
 
     studyQueue.schedule = schedule;
-    //saveObject('study_queue', studyQueue);
 }
 
 /* This function enqueues a number of jobs.
@@ -195,7 +215,7 @@ function finalizeSchedule() {
 function pushReviewPins(timelineToken) {
 
     /* Enque a pin job for each current schedule entry. */
-    _.each(studyQueue.schedule, function (entry) {
+    studyQueue.schedule.forEach(function (entry) {
 
         var timeSlotDate = new Date(entry.timeSlot * 15 * 60 * 1000),
             timeSlotISO = timeSlotDate.toISOString(),
@@ -228,10 +248,18 @@ function pushReviewPins(timelineToken) {
             };
 
         rememberTimelinePin(entry);
-        insertUserPin(timelineToken, pin, function(responseText) {
-            /* Probably want to actually check the response here... */
-            jobber.dequeNextJob();
-        });
+
+        /* NOTE(jr) I do not understand why this extra function closure is
+           necessary here to capture each distinct pin.  The pin variable is
+           already function scoped within the forEach iteration function and
+           I don't see how all the jobs can end up referencing the single,
+           "last" pin created. */
+        (function (pin) {
+            jobber.enqueJob(function (next, abort) {
+                timelineRequest(timelineToken, pin, 'PUT', next, abort);
+            });
+        })(pin);
+
     });
 
     /* Queue a pin deletion job for any outdated pins we know about. */
@@ -241,31 +269,35 @@ function pushReviewPins(timelineToken) {
     _.each(timelinePins.slice(), function (timeSlot) {
         var pin = { id: userInfo.username + '@' + timeSlot };
         if (timeSlot < nowTimeSlot) {
-            deleteUserPin(timelineToken, pin, function (response) {
-                if (response === 'OK') {
-                    forgetTimelinePin(timeSlot);
-                }
-                jobber.dequeNextJob();
-            });
+            /* See above for notes on this seemingly extraneous closure. */
+            (function (pin) {
+                jobber.enqueJob(function (next, abort) {
+                    timelineRequest(timelineToken, pin, 'DELETE', function () {
+                        forgetTimelinePin(timeSlot);
+                        next();
+                    }, abort);
+                });
+            })(pin);
         }
     });
 
     /* Queue a job to save the timeline pin records after the above cleanup
      * jobs have completed. */
-    jobber.enqueJob(function () {
-        console.log('save timeline pins');
+    jobber.enqueJob(function (next, abort) {
+        console.log('Save timeline pins.');
         saveObject('timeline_pins', timelinePins);
-        jobber.dequeNextJob();
+        next();
     });
 }
 
 function rememberTimelinePin(entry) {
-    var found = timelinePins.indexOf(entry.timeSlot);
+    var found = timelinePins.indexOf(entry.timeSlot),
+        what = '+' + entry.newItems + '=' + entry.totalItems + ' @';
     if (found < 0) {
-        console.log('remember ' + formatTimeSlot(entry.timeSlot, entry.duration));
+        console.log('remember ' + what + formatTimeSlot(entry.timeSlot, entry.duration));
         timelinePins.push(entry.timeSlot);
     } else {
-        console.log('affirm ' + formatTimeSlot(entry.timeSlot, entry.duration));
+        console.log('affirm ' + what + formatTimeSlot(entry.timeSlot, entry.duration));
     }
 }
 
@@ -343,18 +375,27 @@ function updateAppGlance() {
         return slice;
     });
 
-    jobber.enqueJob(function () {
-        //console.log('AppGlance reload ' + JSON.stringify(slices, null, 2));
+    jobber.enqueJob(function (next, abort) {
+        //console.log('AppGlance slices: ' + JSON.stringify(slices, null, 2));
         Pebble.appGlanceReload(slices, function () {
-            /* success */
             console.log('AppGlance: Reloaded ' + slices.length);
-            jobber.dequeNextJob();
+            next();
         }, function () {
-            /* failure */
-            console.error('Failed to reload AppGlance.');
+            abort();
+            terminateWithError('Failed to reload AppGlance.');
         });
     });
 
+}
+
+function terminateWithError(errorText) {
+    var message = {};
+    message[messageKeys.ERROR] = errorText.substring(0, 128);
+    Pebble.sendAppMessage(message, function (data) {
+        console.error('Reported error to watch: ' + errorText);
+    }, function (data, error) {
+        console.error('Could not even send an error message to the watch! ' + errorText);
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -438,47 +479,35 @@ var API_URL_ROOT = 'https://timeline-api.getpebble.com/';
  * @param type The type of request, either PUT or DELETE.
  * @param callback The callback to receive the responseText after the request has completed.
  */
-function timelineRequest(timelineToken, pin, type, callback) {
+function timelineRequest(timelineToken, pin, type, next, abort) {
     // User or shared?
     var url = API_URL_ROOT + 'v1/user/pins/' + pin.id;
 
     // Create XHR
     var xhr = new XMLHttpRequest();
     xhr.onload = function () {
-        //console.log('timeline - response received: ' + this.responseText);
-        callback(this.responseText);
+        if (this.status === 200) {
+            next();
+        } else {
+            abort();
+            console.error(this.responseText);
+            terminateWithError('Failed to ' + type + ' timeline pin.');
+        }
     };
     xhr.onerror = function () {
-        console.log('timeline - error: ' + this.statusText);
-        callback(null);
+        abort();
+        console.error(this.responseText);
+        terminateWithError('Failed to ' + type + ' timeline pin.');
     };
     xhr.open(type, url);
 
     // Add headers
     xhr.setRequestHeader('Content-Type', 'application/json');
-    xhr.setRequestHeader('X-User-Token', '' + timelineToken);
+    xhr.setRequestHeader('X-User-Token', timelineToken);
 
     // Send
     xhr.send(JSON.stringify(pin));
-    //console.log('timeline - request sent: ' + type + ' ' + JSON.stringify(pin, null, 2));
-}
-
-/**
- * Insert a pin into the timeline for this user.
- * @param pin The JSON pin to insert.
- * @param callback The callback to receive the responseText after the request has completed.
- */
-function insertUserPin(timelineToken, pin, callback) {
-    jobber.enqueJob(function () { timelineRequest(timelineToken, pin, 'PUT', callback); });
-}
-
-/**
- * Delete a pin from the timeline for this user.
- * @param pin The JSON pin to delete.
- * @param callback The callback to receive the responseText after the request has completed.
- */
-function deleteUserPin(timelineToken, pin, callback) {
-    jobber.enqueJob(function () { timelineRequest(timelineToken, pin, 'DELETE', callback); });
+    console.log('Timeline ' + type + ': ' + JSON.stringify(pin, null, 2));
 }
 
 /***************************** end timeline lib *******************************/
