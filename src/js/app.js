@@ -370,7 +370,7 @@ function updateAppGlance() {
                 }
             };
         if (entry.expiration) {
-            slice.expiration_time = new Date(entry.expiration * (1000*60*15)).toISOString();
+            slice.expirationTime = new Date(entry.expiration * (1000*60*15)).toISOString();
         }
         return slice;
     });
@@ -507,7 +507,7 @@ function timelineRequest(timelineToken, pin, type, next, abort) {
 
     // Send
     xhr.send(JSON.stringify(pin));
-    console.log('Timeline ' + type + ': ' + JSON.stringify(pin, null, 2));
+    // console.log('Timeline ' + type + ': ' + JSON.stringify(pin, null, 2));
 }
 
 /***************************** end timeline lib *******************************/
