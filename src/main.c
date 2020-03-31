@@ -1,6 +1,11 @@
 
 #include <pebble.h>
 #include <pebble-events/pebble-events.h>
+#include <pebble-app-ready-service/pebble-app-ready-service.h>
+
+/*
+ *
+ */
 
 Window* s_load_screen;
 Window* s_result_screen;
@@ -12,24 +17,76 @@ static EventHandle s_app_message_event_handle;
 static Window* create_load_screen();
 static Window* create_result_screen();
 
+static void show_config_screen(const char* message) {
+    strncpy(s_result_text, message, sizeof s_result_text);
+    window_set_background_color(s_result_screen, GColorBlue);
+    s_result_text_color = GColorWhite;
+    window_stack_push(s_result_screen, true);
+    window_stack_remove(s_load_screen, false);
+}
+
+static void show_error_screen(const char* message) {
+    strncpy(s_result_text, message, sizeof s_result_text);
+    window_set_background_color(s_result_screen, GColorFolly);
+    s_result_text_color = GColorWhite;
+    window_stack_push(s_result_screen, true);
+    window_stack_remove(s_load_screen, false);
+}
+
 void success_auto_close(void* context) {
     exit_reason_set(APP_EXIT_ACTION_PERFORMED_SUCCESSFULLY);
     window_stack_pop_all(true);
 }
 
+static void app_ready(void* context) {
+    if (s_launch_reason == APP_LAUNCH_TIMELINE_ACTION
+     || s_launch_reason == APP_LAUNCH_QUICK_LAUNCH
+     || s_launch_reason == APP_LAUNCH_USER)
+    {
+        /* If the user has launched the app, tell the JS side to update the
+           study schedule. */
+        DictionaryIterator* out_iter;
+        AppMessageResult result = app_message_outbox_begin(&out_iter);
+        if (result != APP_MSG_OK) {
+            APP_LOG(APP_LOG_LEVEL_ERROR, "Error preparing the outbox: %d", (int)result);
+            return;
+        }
+
+        int value = 1;
+        dict_write_int(out_iter, MESSAGE_KEY_REFRESH, &value, sizeof(int), true);
+        result = app_message_outbox_send();
+
+        if (result != APP_MSG_OK) {
+            show_error_screen("I've fallen and I can't get up.");
+        } else {
+            APP_LOG(APP_LOG_LEVEL_DEBUG, "Requested update.");
+        }
+
+    } else {
+        /* If the app is launched for any other reason, particular if it is
+           launched in order to configure the settings, do not initiate an
+           update. */
+    }
+
+}
+
+static void app_timeout(void* context) {
+    strncpy(s_result_text, "Host unavailable.", sizeof s_result_text);
+    window_set_background_color(s_result_screen, GColorFolly);
+    s_result_text_color = GColorWhite;
+    window_stack_push(s_result_screen, true);
+    window_stack_remove(s_load_screen, false);
+}
+
 static void message_received(DictionaryIterator* received, void* context) {
 
-    Tuple* t = dict_find(received, MESSAGE_KEY_PUBLIC_API_KEY);
-    if (t && t->type == TUPLE_INT) {
-        strncpy(s_result_text, "Please provide your Public API Key in the settings.", sizeof s_result_text);
-        window_set_background_color(s_result_screen, GColorBlue);
-        s_result_text_color = GColorWhite;
-        window_stack_push(s_result_screen, true);
-        window_stack_remove(s_load_screen, false);
+    Tuple* t = dict_find(received, MESSAGE_KEY_CONFIGURE);
+    if (t && t->type == TUPLE_CSTRING) {
+        show_config_screen(t->value->cstring);
     }
 
     t = dict_find(received, MESSAGE_KEY_PROGRESS);
-    if (t) {
+    if (t && t->type == TUPLE_CSTRING) {
         strncpy(s_result_text, t->value->cstring, sizeof s_result_text);
         layer_mark_dirty(window_get_root_layer(s_load_screen));
         window_stack_remove(s_result_screen, true);
@@ -45,16 +102,13 @@ static void message_received(DictionaryIterator* received, void* context) {
         s_result_text_color = GColorBlack;
         window_stack_push(s_result_screen, true);
         window_stack_remove(s_load_screen, false);
-        app_timer_register(6000, &success_auto_close, NULL);
+        uint32_t duration = preferred_result_display_duration();
+        app_timer_register(duration, &success_auto_close, NULL);
     }
 
     t = dict_find(received, MESSAGE_KEY_ERROR);
     if (t && t->type == TUPLE_CSTRING) {
-        strncpy(s_result_text, t->value->cstring, sizeof s_result_text);
-        window_set_background_color(s_result_screen, GColorFolly);
-        s_result_text_color = GColorWhite;
-        window_stack_push(s_result_screen, true);
-        window_stack_remove(s_load_screen, false);
+        show_error_screen(t->value->cstring);
     }
 
 }
@@ -62,16 +116,6 @@ static void message_received(DictionaryIterator* received, void* context) {
 int main() {
 
     s_result_text[0] = '\0';
-
-    s_load_screen = create_load_screen();
-    window_stack_push(s_load_screen, true);
-
-    s_result_screen = create_result_screen();
-
-    events_app_message_request_inbox_size(2048);
-    events_app_message_request_outbox_size(32);
-    s_app_message_event_handle = events_app_message_register_inbox_received(&message_received, NULL);
-    events_app_message_open();
 
     /*
      * 0 APP_LAUNCH_SYSTEM           App launched by the system
@@ -85,6 +129,21 @@ int main() {
      */
     s_launch_reason = launch_reason();
     APP_LOG(APP_LOG_LEVEL_DEBUG, "launch reason #%d", s_launch_reason);
+
+    s_load_screen = create_load_screen();
+    window_stack_push(s_load_screen, true);
+
+    s_result_screen = create_result_screen();
+
+    app_ready_service_subscribe((AppReadyHandlers){
+        .ready = app_ready,
+        .timeout = app_timeout
+    }, NULL);
+
+    events_app_message_request_inbox_size(1024);
+    events_app_message_request_outbox_size(32);
+    s_app_message_event_handle = events_app_message_register_inbox_received(&message_received, NULL);
+    events_app_message_open();
 
     app_event_loop();
 

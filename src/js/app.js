@@ -25,30 +25,38 @@ var Jobber = require('./jobber.js');
 var jobber = new Jobber();
 
 var WaniKani = require('./wanikani.js');
+var AppReadyService = require('pebble-app-ready-service');
 
 // ---------------------------------------------------------------------------
 // Application Logic
 // ---------------------------------------------------------------------------
 
-Pebble.addEventListener('ready', function () {
-
+AppReadyService.ready(function () {
     userInfo = loadObject('user_information', userInfo);
     timelinePins = loadObject('timeline_pins', timelinePins);
+});
 
-    if (userInfo && userInfo.hasOwnProperty('apikey')) {
-        var wanikani = new WaniKani(userInfo.apikey);
-        fetchStudyQueue(wanikani);
-    } else {
-        var message = {
-            PUBLIC_API_KEY: 1
-        };
-        Pebble.sendAppMessage(message, function (data) {
-            console.log('Requested WaniKani Public API Key. (' + data.transactionId + ')');
-        }, function (data, error) {
-            console.error(error);
-            console.error('Could not send Public API Key request.');
-        });
+Pebble.addEventListener('appmessage', function (e) {
+
+    if (e.payload.REFRESH) {
+        console.log('Watch has requested study schedule update.');
+
+        if (userInfo && userInfo.hasOwnProperty('apikey')) {
+            var wanikani = new WaniKani(userInfo.apikey);
+            fetchStudyQueue(wanikani);
+        } else {
+            var message = {
+                CONFIGURE: 'Please provide your Public API Key in the settings.'
+            };
+            Pebble.sendAppMessage(message, function (data) {
+                console.log('Requested WaniKani Public API Key. (' + data.transactionId + ')');
+            }, function (data, error) {
+                console.error(error);
+                console.error('Could not send Public API Key request.');
+            });
+        }
     }
+
 });
 
 function reportProgress(type, text) {
@@ -91,11 +99,11 @@ function fetchStudyQueue(wanikani) {
            have completed. */
         finalizeSchedule();
 
-        reportProgress('PROGRESS', 'Glance');
-        updateAppGlance(); /* enqueues a job */
-
         reportProgress('PROGRESS', 'Pins');
         pushReviewPins(timelineToken); /* enqueues several jobs */
+
+        reportProgress('PROGRESS', 'Glance');
+        updateAppGlance(); /* enqueues a job */
 
         var message = {
             SUCCESS: 'Review schedule has been updated!  Results should appear on the Timeline within 15 minutes.'
@@ -366,7 +374,7 @@ function updateAppGlance() {
         var slice = {
                 layout: {
                     icon: 'app://images/ICON',
-                    subtitleTemplateString: entry.totalItems + ' reviews, ' + studyQueue.lessons_available + ' lessons available.'
+                    subtitleTemplateString: entry.totalItems + ' reviews, ' + studyQueue.lessons_available + ' lessons'
                 }
             };
         if (entry.expiration) {

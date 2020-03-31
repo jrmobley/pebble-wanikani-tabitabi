@@ -1,12 +1,5 @@
 WaniKani TabiTabi
 
-[ ] Migrate config page hosting to github pages.
 [ ] Implement lovely fctx rendering.  Fallback to system rendering on aplite
     (for memory and text quality).
-[ ] Implement a round layout.
 [ ] With the 'no api key' error message, include some intro language for first time users.
-[ ] Fix all the use cases with the back button.
-    Maybe we don't put the main screen on the stack until it is ready?
-    From the error screen, the back button should exit the app, not drop to
-    the load screen or the main screen.
-    From the load screen, the back button should exit the app.
