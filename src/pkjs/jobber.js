@@ -1,3 +1,6 @@
+'use strict';
+/*eslint no-unused-vars: ["error", { "argsIgnorePattern": "^_" }]*/
+/*global Pebble */
 
 (function() {
     'use strict';
@@ -11,6 +14,13 @@
 
         enqueJob: function (job) {
             this.jobQueue.push(job);
+        },
+
+        start: function () {
+            var self = this;
+            if (self.activeJob == null && self.jobQueue.length) {
+                self.dequeNextJob();
+            }
         },
 
         dequeNextJob: function () {
@@ -40,7 +50,7 @@
                 }
                 Pebble.sendAppMessage(
                     message,
-                function(data) {
+                function(_data) {
                     next();
                 }, function(data, error) {
                     console.log('Error sending message to Pebble device: ');

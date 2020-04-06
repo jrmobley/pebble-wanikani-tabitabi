@@ -3,16 +3,11 @@
 This is a Pebble SDK 3.0 app that syncronizes your
 [WaniKani](https://www.wanikani.com) review schedule to your timeline.
 
-
 ## Setup
 
-Before you can build the project, you must:
+Using Pebble packages now, so there is no special setup required.
 
-1. Update submodules.
-
-2. Install node package dependencies.
-
-## Try it out!
+## Try It Out
 
 The app will totally not work until you enter your WaniKani User API key
 in the configuration!

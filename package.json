@@ -1,76 +1,83 @@
 {
-    "name": "TabiTabi",
-    "version": "2.0.0",
-    "author": "JR Mobley",
-    "private": true,
-    "dependencies": {
-        "pebble-app-ready-service": "../pebble-app-ready-service",
-        "pebble-clay": "^1.0.2",
-        "pebble-events": "^1.1.0",
-        "underscore": "^1.8.3"
-    },
-    "keywords": [
-        "pebble-app"
+  "name": "pebble-wanikani-tabitabi",
+  "version": "2.0.0",
+  "author": "JR Mobley",
+  "private": true,
+  "dependencies": {
+    "pebble-app-ready-service": "../pebble-app-ready-service",
+    "pebble-clay": "^1.0.2",
+    "pebble-events": "^1.1.0",
+    "underscore": "^1.8.3"
+  },
+  "keywords": [
+    "pebble-app"
+  ],
+  "pebble": {
+    "displayName": "TabiTabi",
+    "projectType": "native",
+    "uuid": "ce694583-c51a-4567-8376-d4758daca3d8",
+    "messageKeys": [
+      "API_TOKEN",
+      "EPOCH_HOUR",
+      "LESSON_COUNT",
+      "REVIEW_COUNT",
+      "REVIEW_FORECAST",
+      "REFRESH",
+      "CONFIGURE",
+      "PROGRESS",
+      "SUCCESS",
+      "ERROR"
     ],
-    "pebble": {
-        "displayName": "TabiTabi",
-        "projectType": "native",
-        "uuid": "ce694583-c51a-4567-8376-d4758daca3d8",
-        "messageKeys": [
-            "PUBLIC_API_KEY",
-            "REFRESH",
-            "CONFIGURE",
-            "PROGRESS",
-            "SUCCESS",
-            "ERROR"
-        ],
-        "sdkVersion": "3",
-        "enableMultiJS": true,
-        "watchapp": {
-            "onlyShownOnCommunication": false,
-            "hiddenApp": false,
-            "watchface": false
+    "sdkVersion": "3",
+    "enableMultiJS": true,
+    "watchapp": {
+      "onlyShownOnCommunication": false,
+      "hiddenApp": false,
+      "watchface": false
+    },
+    "targetPlatforms": [
+      "aplite",
+      "basalt",
+      "chalk",
+      "diorite"
+    ],
+    "capabilities": [
+      "configurable"
+    ],
+    "resources": {
+      "media": [
+        {
+          "type": "png",
+          "name": "ICON_TINY",
+          "file": "icon25.png",
+          "menuIcon": true
         },
-        "targetPlatforms": [
-            "aplite",
-            "basalt",
-            "chalk",
-            "diorite"
-        ],
-        "capabilities": [
-            "configurable"
-        ],
-        "resources": {
-            "media": [
-                {
-                    "type": "png",
-                    "name": "ICON_TINY",
-                    "file": "icon25.png",
-                    "menuIcon": true
-                },
-                {
-                    "type": "png",
-                    "name": "ICON_SMALL",
-                    "file": "icon50.png"
-                },
-                {
-                    "type": "png",
-                    "name": "ICON_LARGE",
-                    "file": "icon80.png"
-                }
-            ],
-            "publishedMedia": [
-                {
-                    "name": "ICON",
-                    "id": 1,
-                    "glance": "ICON_TINY",
-                    "timeline": {
-                        "tiny": "ICON_TINY",
-                        "small": "ICON_SMALL",
-                        "large": "ICON_LARGE"
-                    }
-                }
-            ]
+        {
+          "type": "png",
+          "name": "ICON_SMALL",
+          "file": "icon50.png"
+        },
+        {
+          "type": "png",
+          "name": "ICON_LARGE",
+          "file": "icon80.png"
         }
+      ],
+      "publishedMedia": [
+        {
+          "name": "ICON",
+          "id": 1,
+          "glance": "ICON_TINY",
+          "timeline": {
+            "tiny": "ICON_TINY",
+            "small": "ICON_SMALL",
+            "large": "ICON_LARGE"
+          }
+        }
+      ]
     }
+  },
+  "devDependencies": {
+    "eslint": "^6.8.0"
+  }
 }

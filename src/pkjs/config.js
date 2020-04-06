@@ -16,9 +16,10 @@ module.exports = [
         items: [
             {
                 type: 'input',
-                messageKey: 'PUBLIC_API_KEY',
-                label: 'Public API Key',
+                messageKey: 'API_TOKEN',
+                label: 'Personal Access Token',
                 defaultValue: '',
+                description: 'Your WaniKani v2 API token.',
                 attributes: {
                 }
             }
