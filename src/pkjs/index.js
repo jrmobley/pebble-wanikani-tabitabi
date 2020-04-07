@@ -76,10 +76,10 @@ function fetchStudyQueue(wanikani) {
         terminateWithError(error.message);
     }
 
-    reportProgress('PROGRESS', 'User');
+    reportProgress('PROGRESS', 'Consulting the Crabigator');
     jobber.enqueJob(function (_next, _abort) { wanikani.request('user', receiveUser, onWaniKaniError); });
 
-    reportProgress('PROGRESS', 'Summary');
+    reportProgress('PROGRESS', 'Receiving the Summary');
     jobber.enqueJob(function (_next, _abort) { wanikani.request('summary', receiveSummary, onWaniKaniError); });
 
     var timelineToken;
@@ -89,7 +89,7 @@ function fetchStudyQueue(wanikani) {
             next();
         });
     } else {
-        reportProgress('PROGRESS', 'Timeline');
+        reportProgress('PROGRESS', 'Altering the Timeline');
         jobber.enqueJob(function (next, abort) {
             Pebble.getTimelineToken(function (token) {
                 console.log('Aquired timeline token: ' + token);
@@ -107,7 +107,7 @@ function fetchStudyQueue(wanikani) {
         /* All of these functions can prepare their jobs once the above jobs
            have completed. */
         
-        reportProgress('PROGRESS', 'Pins');
+        reportProgress('PROGRESS', 'Pushing the Pins');
         pushReviewPins(timelineToken); /* enqueues several jobs */
         sendStudySummary(); /* enqueues one job */
         next();

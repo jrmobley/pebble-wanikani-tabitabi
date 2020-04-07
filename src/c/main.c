@@ -7,10 +7,6 @@
 // Constants
 // --------------------------------------------------------------------------
 
-#if defined(PBL_ROUND)
-#else
-#endif
-
 /* Various useful time intervals expressed in seconds. */
 const time_t kOneMinute  = 60;
 const time_t kOneHour    = 60 * 60;
@@ -42,14 +38,16 @@ Window* s_message_screen;
 StudySummary s_summary;
 AppTimer* s_refresh_timer;
 
-static char s_text_buffer[128];
-static char s_message_text[256];
-static GColor s_result_text_color;
+static char s_scratch_text_buffer[64];
+static char s_loading_text_buffer[128];
+static char s_message_text_buffer[128];
+static GColor s_message_fill_color;
+static GColor s_message_text_color;
 static AppLaunchReason s_launch_reason;
 static EventHandle s_app_message_event_handle;
 
 // --------------------------------------------------------------------------
-// Fonts and Text
+// Fonts, Text, Colors, and Layout
 // --------------------------------------------------------------------------
 
 typedef struct MFont {
@@ -63,6 +61,7 @@ MFont s_gothic_14;
 MFont s_gothic_18;
 MFont s_gothic_24;
 MFont s_gothic_28;
+GTextAttributes* s_layout_attributes = NULL;
 
 static void init_font(MFont* font, const char* regular, const char* bold, uint16_t ascender, uint16_t cap_height) {
     font->regular = fonts_get_system_font(regular);
@@ -76,50 +75,88 @@ static void init_fonts() {
     init_font(&s_gothic_18, FONT_KEY_GOTHIC_18, FONT_KEY_GOTHIC_18_BOLD, 7, 11);
     init_font(&s_gothic_24, FONT_KEY_GOTHIC_24, FONT_KEY_GOTHIC_24_BOLD, 10, 14);
     init_font(&s_gothic_28, FONT_KEY_GOTHIC_28, FONT_KEY_GOTHIC_28_BOLD, 10, 18);
+    s_layout_attributes = graphics_text_attributes_create();
+    graphics_text_attributes_enable_screen_text_flow(s_layout_attributes, 10);
+}
+
+static const GColor kMainWindowColor   = {.argb = PBL_IF_COLOR_ELSE(GColorLightGrayARGB8,      GColorBlackARGB8)};
+static const GColor kLessonsBoxColor   = {.argb = PBL_IF_COLOR_ELSE(GColorFashionMagentaARGB8, GColorWhiteARGB8)};
+static const GColor kReviewsBoxColor   = {.argb = PBL_IF_COLOR_ELSE(GColorVividCeruleanARGB8,  GColorWhiteARGB8)};
+static const GColor kValueTextColor    = {.argb = PBL_IF_COLOR_ELSE(GColorWhiteARGB8,          GColorBlackARGB8)};
+static const GColor kLabelInsetColor   = {.argb = PBL_IF_COLOR_ELSE(GColorWhiteARGB8,          GColorWhiteARGB8)};
+static const GColor kLabelTextColor    = {.argb = PBL_IF_COLOR_ELSE(GColorBlackARGB8,          GColorBlackARGB8)};
+static const GColor kForecastBoxColor  = {.argb = PBL_IF_COLOR_ELSE(GColorWhiteARGB8,          GColorWhiteARGB8)};
+static const GColor kForecastTextColor = {.argb = PBL_IF_COLOR_ELSE(GColorBlackARGB8,          GColorBlackARGB8)};
+static const GColor kErrorScreenColor  = {.argb = PBL_IF_COLOR_ELSE(GColorFollyARGB8,          GColorWhiteARGB8)};
+static const GColor kErrorTextColor    = {.argb = PBL_IF_COLOR_ELSE(GColorWhiteARGB8,          GColorBlackARGB8)};
+static const GColor kConfigScreenColor = {.argb = PBL_IF_COLOR_ELSE(GColorBlueARGB8,           GColorWhiteARGB8)};
+static const GColor kConfigTextColor   = {.argb = PBL_IF_COLOR_ELSE(GColorWhiteARGB8,          GColorBlackARGB8)};
+static const int16_t kBoxCornerRadius = 5;
+static const int16_t kBoxStrokeWidth  = 2;
+static const int16_t kBoxSpacing = 2;
+static const MFont* kLoadScreenFont = &s_gothic_18;
+static const MFont* kMessageScreenFont = &s_gothic_18;
+static const MFont* kValueFont = &s_gothic_28;
+static const MFont* kLabelFont = &s_gothic_14;
+static const MFont* kForecastHeadingFont = &s_gothic_14;
+static const MFont* kForecastRowFont = &s_gothic_18;
+static const MFont* kNoForecastFont = &s_gothic_24;
+static const char const* kLoadScreenDefaultText = "TabiTabi";
+static const char const* kLessonsLabelText = "Lessons";
+static const char const* kReviewsLabelText = "Reviews";
+static const char const* kDayLabel[] = { "Today", "Tomorrow" };
+static const char const* kEmptyForecastText = "No reviews in your 24 hour forecast.";
+
+static const GEdgeInsets kTextScreenInsets = {
+    .top = 10, .left = 10, .right = 10
+};
+
+#if defined(PBL_ROUND)
+#else
+#endif
+
+// -----------------------------------------------------------------------------
+//
+// -----------------------------------------------------------------------------
+
+static void draw_text_screen(Layer* layer, GContext* ctx, const char* text, GFont font) {
+
+    GRect box = layer_get_bounds(layer);
+    graphics_fill_rect(ctx, box, 0, GCornerNone);
+
+    box = grect_inset(box, kTextScreenInsets);
+    GTextOverflowMode overflow = GTextOverflowModeWordWrap;
+    GTextAlignment alignment = GTextAlignmentCenter;
+    GSize size = graphics_text_layout_get_content_size(
+        text, font, box, overflow, alignment);
+    box.origin.y = (box.size.h - size.h) / 2;
+
+    graphics_draw_text(ctx, text, font, box, overflow, alignment, s_layout_attributes);
 }
 
 // -----------------------------------------------------------------------------
 // Load Screen functions
 // -----------------------------------------------------------------------------
 
-static void draw_load_screen(Layer* layer, GContext* ctx) {
-
-    GRect bounds = layer_get_bounds(layer);
+static void draw_loading_screen(Layer* layer, GContext* ctx) {
     graphics_context_set_text_color(ctx, GColorBlack);
     graphics_context_set_fill_color(ctx, GColorWhite);
-    graphics_fill_rect(ctx, bounds, 0, GCornerNone);
-
-    const char* text = "kangaete imasu";
-    GFont font = fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD);
-    GRect box = layer_get_bounds(layer);
-    GTextOverflowMode overflow = GTextOverflowModeWordWrap;
-    GTextAlignment alignment = GTextAlignmentCenter;
-
-    GSize size = graphics_text_layout_get_content_size(
-        text, font, box, overflow, alignment);
-    box.origin.y = (box.size.h - size.h) / 2;
-
-    graphics_draw_text(ctx, text, font, box, overflow, alignment, NULL);
-    if (s_message_text[0]) {
-        box.origin.y += size.h;
-        graphics_draw_text(ctx, s_message_text, font, box, overflow, alignment, NULL);
-    }
+    draw_text_screen(layer, ctx, s_loading_text_buffer, kLoadScreenFont->bold);
 }
 
-static void load_load_screen(Window* window) {
-
+static void load_loading_screen(Window* window) {
     Layer* layer = window_get_root_layer(window);
-    layer_set_update_proc(layer, &draw_load_screen);
+    layer_set_update_proc(layer, &draw_loading_screen);
 }
 
-static void unload_load_screen(Window* window) {
+static void unload_loading_screen(Window* window) {
 }
 
-Window* create_load_screen() {
+Window* create_loading_screen() {
     Window* window = window_create();
     window_set_window_handlers(window, (WindowHandlers) {
-        .load = load_load_screen,
-        .unload = unload_load_screen,
+        .load = load_loading_screen,
+        .unload = unload_loading_screen,
     });
     return window;
 }
@@ -128,32 +165,18 @@ Window* create_load_screen() {
 // Result Screen functions
 // -----------------------------------------------------------------------------
 
-static TextLayer* s_message_text_layer = NULL;
+static void draw_message_screen(Layer* layer, GContext* ctx) {
+    graphics_context_set_fill_color(ctx, s_message_fill_color);
+    graphics_context_set_text_color(ctx, s_message_text_color);
+    draw_text_screen(layer, ctx, s_message_text_buffer, kMessageScreenFont->bold);
+}
 
 static void load_message_screen(Window* window) {
-    Layer* window_layer = window_get_root_layer(window);
-    GRect bounds = layer_get_bounds(window_layer);
-    const GEdgeInsets insets = {
-        .top = 10, .left = 10, .right = 10
-    };
-
-    s_message_text_layer = text_layer_create(grect_inset(bounds, insets));
-    text_layer_set_text_alignment(s_message_text_layer, GTextAlignmentCenter);
-    text_layer_set_overflow_mode(s_message_text_layer, GTextOverflowModeWordWrap);
-    text_layer_set_font(s_message_text_layer, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD));
-    text_layer_set_text_color(s_message_text_layer, s_result_text_color);
-    text_layer_set_background_color(s_message_text_layer, GColorClear);
-    text_layer_set_text(s_message_text_layer, s_message_text);
-    layer_add_child(window_layer, text_layer_get_layer(s_message_text_layer));
-
-#if defined(PBL_ROUND)
-    text_layer_enable_screen_text_flow_and_paging(s_message_text_layer, 3);
-#endif
+    Layer* layer = window_get_root_layer(window);
+    layer_set_update_proc(layer, &draw_message_screen);
 }
 
 static void unload_message_screen(Window* window) {
-    text_layer_destroy(s_message_text_layer);
-    s_message_text_layer = NULL;
 }
 
 Window* create_message_screen() {
@@ -166,9 +189,9 @@ Window* create_message_screen() {
 }
 
 static void show_error_screen(const char* message) {
-    strncpy(s_message_text, message, sizeof s_message_text);
-    window_set_background_color(s_message_screen, GColorFolly);
-    s_result_text_color = GColorWhite;
+    strncpy(s_message_text_buffer, message, sizeof s_message_text_buffer);
+    s_message_fill_color = kErrorScreenColor;
+    s_message_text_color = kErrorTextColor;
     if (!window_stack_contains_window(s_message_screen)) {
         window_stack_push(s_message_screen, true);
     }
@@ -178,23 +201,6 @@ static void show_error_screen(const char* message) {
 // -----------------------------------------------------------------------------
 // Main Screen functions
 // -----------------------------------------------------------------------------
-
-static GColor kMainWindowColor   = {.argb = PBL_IF_COLOR_ELSE(GColorLightGrayARGB8,      GColorBlackARGB8)};
-static GColor kLessonsBoxColor   = {.argb = PBL_IF_COLOR_ELSE(GColorFashionMagentaARGB8, GColorWhiteARGB8)};
-static GColor kReviewsBoxColor   = {.argb = PBL_IF_COLOR_ELSE(GColorVividCeruleanARGB8,  GColorWhiteARGB8)};
-static GColor kValueTextColor    = {.argb = PBL_IF_COLOR_ELSE(GColorWhiteARGB8,          GColorBlackARGB8)};
-static GColor kLabelInsetColor   = {.argb = PBL_IF_COLOR_ELSE(GColorWhiteARGB8,          GColorWhiteARGB8)};
-static GColor kLabelTextColor    = {.argb = PBL_IF_COLOR_ELSE(GColorBlackARGB8,          GColorBlackARGB8)};
-static GColor kForecastBoxColor  = {.argb = PBL_IF_COLOR_ELSE(GColorWhiteARGB8,          GColorWhiteARGB8)};
-static GColor kForecastTextColor = {.argb = PBL_IF_COLOR_ELSE(GColorBlackARGB8,          GColorBlackARGB8)}; 
-static int16_t kBoxCornerRadius = 5;
-static int16_t kBoxStrokeWidth  = 2;
-static int16_t kBoxSpacing = 2;
-static MFont* kValueFont = &s_gothic_28;
-static MFont* kLabelFont = &s_gothic_14;
-static MFont* kForecastFont = &s_gothic_18;
-static MFont* kNoForecastFont = &s_gothic_24;
-static const char* kDayLabel[] = { "Today", "Tomorrow" };
 
 static void update_schedule(StudySummary* q) {
     int32_t elapsedHours = time(NULL) / kOneHour - q->epoch_hour;
@@ -229,8 +235,8 @@ static void draw_available(GContext* ctx, GRect* box, GColor bg, const char* lab
 
     GRect ibox;
     GRect tbox;
-    MFont* labelFont = kLabelFont;
-    MFont* valueFont = kValueFont;
+    const MFont* labelFont = kLabelFont;
+    const MFont* valueFont = kValueFont;
 
     int labelMargin = labelFont->ascender / 2;
     int valueMargin = valueFont->ascender / 2;
@@ -270,10 +276,10 @@ static void draw_available(GContext* ctx, GRect* box, GColor bg, const char* lab
 
 static GRect draw_forecast_row(GContext* ctx, GRect box, time_t time, uint16_t count, uint16_t total) {
 
-    MFont* font = kForecastFont;
+    const MFont* font = kForecastRowFont;
     struct tm* local = localtime(&time);
-    char* buffer = s_text_buffer;
-    size_t maxsize = sizeof s_text_buffer;
+    char* buffer = s_scratch_text_buffer;
+    size_t maxsize = sizeof s_scratch_text_buffer;
     GRect rbox = box;
     rbox.origin.x += font->ascender;
     rbox.size.w -= 2 * font->ascender;
@@ -308,8 +314,8 @@ static GRect draw_forecast_row(GContext* ctx, GRect box, time_t time, uint16_t c
 
 static void draw_main_screen(Layer* layer, GContext* ctx) {
 
-    char* buffer = s_text_buffer;
-    char* end = buffer + sizeof s_text_buffer;
+    char* buffer = s_scratch_text_buffer;
+    char* end = buffer + sizeof s_scratch_text_buffer;
     StudySummary* q = &s_summary;
     GRect bounds = layer_get_bounds(layer);
     GRect box;
@@ -341,12 +347,12 @@ static void draw_main_screen(Layer* layer, GContext* ctx) {
     box.origin.y = kBoxSpacing;
     box.size.w = bounds.size.w / 2 - kBoxSpacing - kBoxSpacing/2;
     snprintf(buffer, end - buffer, "%u", q->lesson_count);
-    draw_available(ctx, &box, kLessonsBoxColor, "Lessons", buffer);
+    draw_available(ctx, &box, kLessonsBoxColor, kLessonsLabelText, buffer);
 
     /* Draw the available reviews box. */
     box.origin.x = bounds.size.w / 2 + kBoxSpacing/2;
     snprintf(buffer, end - buffer, "%u", q->review_count);
-    draw_available(ctx, &box, kReviewsBoxColor, "Reviews", buffer);
+    draw_available(ctx, &box, kReviewsBoxColor, kReviewsLabelText, buffer);
 
     /* Draw the box for the review forecast. */
     box.origin.x = kBoxSpacing;
@@ -356,7 +362,7 @@ static void draw_main_screen(Layer* layer, GContext* ctx) {
     graphics_context_set_fill_color(ctx, kForecastBoxColor);
     graphics_fill_rect(ctx, box, kBoxCornerRadius, GCornersAll);
 
-    MFont* headingFont = &s_gothic_14;
+    const MFont* headingFont = kForecastHeadingFont;
     uint16_t headingMargin = headingFont->ascender / 2;
     box.origin.x += headingMargin;
     box.origin.y += 0;
@@ -365,8 +371,8 @@ static void draw_main_screen(Layer* layer, GContext* ctx) {
     graphics_context_set_text_color(ctx, kForecastTextColor);
 
     if (q->forecast_length == 0) {
-        const char* text = "No reviews in your 24 hour forecast.";
-        MFont* font = kNoForecastFont;
+        const char* text = kEmptyForecastText;
+        const MFont* font = kNoForecastFont;
         int margin = font->ascender;
         tbox.origin.x = box.origin.x + margin;
         tbox.origin.y = box.origin.y;
@@ -376,9 +382,8 @@ static void draw_main_screen(Layer* layer, GContext* ctx) {
         return;
     }
 
-    MFont* rowFont = &s_gothic_14;
+    const MFont* rowFont = kForecastRowFont;
     uint16_t headingHeight = headingFont->ascender + headingFont->cap_height;
-    uint16_t rowMargin = rowFont->ascender / 2;
     uint16_t rowHeight = rowFont->ascender + rowFont->cap_height;
 
     int day = -1;
@@ -471,9 +476,9 @@ static void app_ready(void* context) {
 }
 
 static void app_timeout(void* context) {
-    strncpy(s_message_text, "Host unavailable.", sizeof s_message_text);
+    strncpy(s_message_text_buffer, "Host unavailable.", sizeof s_message_text_buffer);
     window_set_background_color(s_message_screen, GColorFolly);
-    s_result_text_color = GColorWhite;
+    s_message_text_color = GColorWhite;
     window_stack_push(s_message_screen, true);
     window_stack_remove(s_load_screen, false);
 }
@@ -481,9 +486,9 @@ static void app_timeout(void* context) {
 #if PBL_API_EXISTS(app_glance_reload)
 
 static const char* glance_slice_subtitle(int lessons, int reviews) {
-    snprintf(s_text_buffer, ARRAY_LENGTH(s_text_buffer),
+    snprintf(s_scratch_text_buffer, ARRAY_LENGTH(s_scratch_text_buffer),
         "L:%d R:%d", lessons, reviews);
-    return s_text_buffer;
+    return s_scratch_text_buffer;
 }
 
 static void refresh_app_glance(AppGlanceReloadSession* session, size_t limit, void* context) {
@@ -535,9 +540,9 @@ static void message_received(DictionaryIterator* received, void* context) {
     Tuple* t = dict_find(received, MESSAGE_KEY_CONFIGURE);
     if (t) {
         if (t->type == TUPLE_CSTRING) {
-            strncpy(s_message_text, t->value->cstring, sizeof s_message_text);
-            window_set_background_color(s_message_screen, GColorBlue);
-            s_result_text_color = GColorWhite;
+            strncpy(s_message_text_buffer, t->value->cstring, sizeof s_message_text_buffer);
+            s_message_fill_color = kConfigScreenColor;
+            s_message_text_color = kConfigTextColor;
             if (!window_stack_contains_window(s_message_screen)) {
                 window_stack_push(s_message_screen, true);
             }
@@ -550,7 +555,7 @@ static void message_received(DictionaryIterator* received, void* context) {
 
     t = dict_find(received, MESSAGE_KEY_PROGRESS);
     if (t && t->type == TUPLE_CSTRING) {
-        strncpy(s_message_text, t->value->cstring, sizeof s_message_text);
+        strncpy(s_loading_text_buffer, t->value->cstring, sizeof s_loading_text_buffer);
         layer_mark_dirty(window_get_root_layer(s_load_screen));
         window_stack_remove(s_message_screen, true);
         if (!window_stack_contains_window(s_load_screen)) {
@@ -607,7 +612,7 @@ int main() {
 
     init_fonts();
 
-    s_message_text[0] = '\0';
+    strncpy(s_loading_text_buffer, kLoadScreenDefaultText, sizeof s_loading_text_buffer);
     memset(&s_summary, 0, sizeof s_summary);
 
     /*
@@ -624,7 +629,7 @@ int main() {
     APP_LOG(APP_LOG_LEVEL_DEBUG, "launch reason #%d", s_launch_reason);
 
     s_main_screen = create_main_screen();
-    s_load_screen = create_load_screen();
+    s_load_screen = create_loading_screen();
     s_message_screen = create_message_screen();
 
     window_stack_push(s_load_screen, true);
