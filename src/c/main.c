@@ -2,6 +2,7 @@
 #include <pebble.h>
 #include <pebble-events/pebble-events.h>
 #include <pebble-app-ready-service/pebble-app-ready-service.h>
+#include "isqrt.h"
 
 // --------------------------------------------------------------------------
 // Constants
@@ -51,30 +52,36 @@ static EventHandle s_app_message_event_handle;
 // --------------------------------------------------------------------------
 
 typedef struct MFont {
-    GFont regular;
-    GFont bold;
+    GFont gfont;
     uint8_t ascender; // from top of em-box to baseline.
     uint8_t cap_height; // from top of capitals to baseline.
 } MFont;
 
-MFont s_gothic_14;
-MFont s_gothic_18;
-MFont s_gothic_24;
-MFont s_gothic_28;
+MFont s_gothic_14r;
+MFont s_gothic_14b;
+MFont s_gothic_18r;
+MFont s_gothic_18b;
+MFont s_gothic_24r;
+MFont s_gothic_24b;
+MFont s_gothic_28r;
+MFont s_gothic_28b;
 GTextAttributes* s_layout_attributes = NULL;
 
-static void init_font(MFont* font, const char* regular, const char* bold, uint16_t ascender, uint16_t cap_height) {
-    font->regular = fonts_get_system_font(regular);
-    font->bold    = fonts_get_system_font(bold);
+static void init_font(MFont* font, const char* key, uint16_t ascender, uint16_t cap_height) {
+    font->gfont = fonts_get_system_font(key);
     font->ascender = ascender;
     font->cap_height = cap_height;
 }
 
 static void init_fonts() {
-    init_font(&s_gothic_14, FONT_KEY_GOTHIC_14, FONT_KEY_GOTHIC_14_BOLD, 5, 9);
-    init_font(&s_gothic_18, FONT_KEY_GOTHIC_18, FONT_KEY_GOTHIC_18_BOLD, 7, 11);
-    init_font(&s_gothic_24, FONT_KEY_GOTHIC_24, FONT_KEY_GOTHIC_24_BOLD, 10, 14);
-    init_font(&s_gothic_28, FONT_KEY_GOTHIC_28, FONT_KEY_GOTHIC_28_BOLD, 10, 18);
+    init_font(&s_gothic_14r, FONT_KEY_GOTHIC_14,      5, 9);
+    init_font(&s_gothic_14b, FONT_KEY_GOTHIC_14_BOLD, 5, 9);
+    init_font(&s_gothic_18r, FONT_KEY_GOTHIC_18,      7, 11);
+    init_font(&s_gothic_18b, FONT_KEY_GOTHIC_18_BOLD, 7, 11);
+    init_font(&s_gothic_24r, FONT_KEY_GOTHIC_24,      10, 14);
+    init_font(&s_gothic_24b, FONT_KEY_GOTHIC_24_BOLD, 10, 14);
+    init_font(&s_gothic_28r, FONT_KEY_GOTHIC_28,      10, 18);
+    init_font(&s_gothic_28b, FONT_KEY_GOTHIC_28_BOLD, 10, 18);
     s_layout_attributes = graphics_text_attributes_create();
     graphics_text_attributes_enable_screen_text_flow(s_layout_attributes, 10);
 }
@@ -94,13 +101,13 @@ static const GColor kConfigTextColor   = {.argb = PBL_IF_COLOR_ELSE(GColorWhiteA
 static const int16_t kBoxCornerRadius = 5;
 static const int16_t kBoxStrokeWidth  = 2;
 static const int16_t kBoxSpacing = 2;
-static const MFont* kLoadScreenFont = &s_gothic_18;
-static const MFont* kMessageScreenFont = &s_gothic_18;
-static const MFont* kValueFont = &s_gothic_28;
-static const MFont* kLabelFont = &s_gothic_14;
-static const MFont* kForecastHeadingFont = &s_gothic_14;
-static const MFont* kForecastRowFont = &s_gothic_18;
-static const MFont* kNoForecastFont = &s_gothic_24;
+static const MFont* kLoadScreenFont = &s_gothic_18b;
+static const MFont* kMessageScreenFont = &s_gothic_18b;
+static const MFont* kValueFont = &s_gothic_28b;
+static const MFont* kLabelFont = &s_gothic_14r;
+static const MFont* kForecastHeadingFont = &s_gothic_14b;
+static const MFont* kForecastRowFont = &s_gothic_18r;
+static const MFont* kNoForecastFont = &s_gothic_18b;
 static const char const* kLoadScreenDefaultText = "TabiTabi";
 static const char const* kLessonsLabelText = "Lessons";
 static const char const* kReviewsLabelText = "Reviews";
@@ -111,91 +118,111 @@ static const GEdgeInsets kTextScreenInsets = {
     .top = 10, .left = 10, .right = 10
 };
 
+typedef struct TextFitment {
+    GSize size;
+    GEdgeInsets insets;
+} TextFitment;
+
+typedef struct AvailablesLayout {
+    GRect box;
+    GEdgeInsets insets;
+    GTextAlignment alignment;
+    GCornerMask corner_mask;
+    GColor color;
+    const char* label;
+} AvailablesLayout;
+
+static GRect s_availables_box;
+static TextFitment s_value_fitment;
+static TextFitment s_label_fitment;
+static AvailablesLayout s_lessons_layout;
+static AvailablesLayout s_reviews_layout;
+static GRect s_forecast_box;
+
+static const GCornerMask kForecastCorners = PBL_IF_RECT_ELSE(GCornersAll, GCornerNone);
+static const GTextAlignment kHeadingAlignment = PBL_IF_RECT_ELSE(GTextAlignmentLeft, GTextAlignmentCenter);
+
+static TextFitment text_fitment(const MFont* mfont, const char* text) {
+    GRect box = { { 0, 0 }, { 1024, 1024 } };
+    TextFitment result;
+    result.size = graphics_text_layout_get_content_size(text, mfont->gfont, box, GTextOverflowModeWordWrap, GTextAlignmentLeft);
+    int16_t margin = mfont->ascender / 2;
+    result.size.w += 2 * margin;
+    result.size.h = mfont->cap_height + 2 * margin;
+    result.insets.top = margin - mfont->ascender;
+    result.insets.bottom = margin;
+    result.insets.left = margin;
+    result.insets.right = margin;
+    return result;
+}
+
+static void layout_stuff(GRect bounds) {
+
+    s_label_fitment = text_fitment(kLabelFont, kLessonsLabelText);
+    s_value_fitment = text_fitment(kValueFont, "999");
+
 #if defined(PBL_ROUND)
-#else
+    /* For a round layout, we want to take our minimum content width and snug
+       it up into the top of the circle as far as it will fit.  We use a radius
+       that is a little reduced from the raw display size in order to accomodate
+       the overlap of the bezel. */
+    int16_t r = 90 - 2;
+    int16_t w = kBoxSpacing / 2 + s_value_fitment.size.w;
+    int16_t pad = bounds.size.h / 2 - usqrt(r*r - w*w) / SQRT_SCALE;
+
+    /* Put the padding into the value fitment. */
+    s_value_fitment.size.h += pad;
+    s_value_fitment.insets.top += pad;
 #endif
 
-// -----------------------------------------------------------------------------
-//
-// -----------------------------------------------------------------------------
+    /* Set up the bounds for the Availables area (Lessons and Reviews). */
+    int16_t availables_inset = PBL_IF_RECT_ELSE(kBoxSpacing, 0);
+    s_availables_box.origin.x = bounds.origin.x + availables_inset;
+    s_availables_box.origin.y = bounds.origin.y + availables_inset;
+    s_availables_box.size.w = bounds.size.w - 2 * availables_inset;
+    s_availables_box.size.h = s_value_fitment.size.h + s_label_fitment.size.h + kBoxStrokeWidth;
 
-static void draw_text_screen(Layer* layer, GContext* ctx, const char* text, GFont font) {
-
-    GRect box = layer_get_bounds(layer);
-    graphics_fill_rect(ctx, box, 0, GCornerNone);
-
-    box = grect_inset(box, kTextScreenInsets);
-    GTextOverflowMode overflow = GTextOverflowModeWordWrap;
-    GTextAlignment alignment = GTextAlignmentCenter;
-    GSize size = graphics_text_layout_get_content_size(
-        text, font, box, overflow, alignment);
-    box.origin.y = (box.size.h - size.h) / 2;
-
-    graphics_draw_text(ctx, text, font, box, overflow, alignment, s_layout_attributes);
-}
-
-// -----------------------------------------------------------------------------
-// Load Screen functions
-// -----------------------------------------------------------------------------
-
-static void draw_loading_screen(Layer* layer, GContext* ctx) {
-    graphics_context_set_text_color(ctx, GColorBlack);
-    graphics_context_set_fill_color(ctx, GColorWhite);
-    draw_text_screen(layer, ctx, s_loading_text_buffer, kLoadScreenFont->bold);
-}
-
-static void load_loading_screen(Window* window) {
-    Layer* layer = window_get_root_layer(window);
-    layer_set_update_proc(layer, &draw_loading_screen);
-}
-
-static void unload_loading_screen(Window* window) {
-}
-
-Window* create_loading_screen() {
-    Window* window = window_create();
-    window_set_window_handlers(window, (WindowHandlers) {
-        .load = load_loading_screen,
-        .unload = unload_loading_screen,
+    /* Tune the Availables insets for the display shape. */
+    s_lessons_layout.insets = ((GEdgeInsets){
+        .top = s_value_fitment.size.h,
+        .bottom = kBoxStrokeWidth,
+        .left = PBL_IF_RECT_ELSE(kBoxStrokeWidth, 0),
+        .right = kBoxStrokeWidth,
     });
-    return window;
-}
-
-// -----------------------------------------------------------------------------
-// Result Screen functions
-// -----------------------------------------------------------------------------
-
-static void draw_message_screen(Layer* layer, GContext* ctx) {
-    graphics_context_set_fill_color(ctx, s_message_fill_color);
-    graphics_context_set_text_color(ctx, s_message_text_color);
-    draw_text_screen(layer, ctx, s_message_text_buffer, kMessageScreenFont->bold);
-}
-
-static void load_message_screen(Window* window) {
-    Layer* layer = window_get_root_layer(window);
-    layer_set_update_proc(layer, &draw_message_screen);
-}
-
-static void unload_message_screen(Window* window) {
-}
-
-Window* create_message_screen() {
-    Window* window = window_create();
-    window_set_window_handlers(window, (WindowHandlers) {
-        .load = load_message_screen,
-        .unload = unload_message_screen,
+    s_reviews_layout.insets = ((GEdgeInsets){
+        .top = s_value_fitment.size.h,
+        .bottom = kBoxStrokeWidth,
+        .left = kBoxStrokeWidth,
+        .right = PBL_IF_RECT_ELSE(kBoxStrokeWidth, 0),
     });
-    return window;
-}
 
-static void show_error_screen(const char* message) {
-    strncpy(s_message_text_buffer, message, sizeof s_message_text_buffer);
-    s_message_fill_color = kErrorScreenColor;
-    s_message_text_color = kErrorTextColor;
-    if (!window_stack_contains_window(s_message_screen)) {
-        window_stack_push(s_message_screen, true);
-    }
-    window_stack_remove(s_load_screen, false);
+    /* Tune the text alignments for the display shape. */
+    s_lessons_layout.alignment = PBL_IF_RECT_ELSE(GTextAlignmentCenter, GTextAlignmentRight);
+    s_reviews_layout.alignment = PBL_IF_RECT_ELSE(GTextAlignmentCenter, GTextAlignmentLeft);
+    
+    /* Tune the rectangle corners for the display shape. */
+    s_lessons_layout.corner_mask = PBL_IF_RECT_ELSE(GCornersAll, GCornerBottomRight);
+    s_reviews_layout.corner_mask = PBL_IF_RECT_ELSE(GCornersAll, GCornerBottomLeft);
+
+    /* Split the availables box; left half for lessions, right half for reviews. */
+    s_lessons_layout.box = s_availables_box;
+    s_lessons_layout.box.size.w = (s_availables_box.size.w - kBoxSpacing) / 2;
+    s_reviews_layout.box = s_lessons_layout.box;
+    s_reviews_layout.box.origin.x = s_availables_box.origin.x + s_availables_box.size.w - s_reviews_layout.box.size.w;
+
+    /* Set the colors. */
+    s_lessons_layout.color = kLessonsBoxColor;
+    s_reviews_layout.color = kReviewsBoxColor;
+
+    /* Set the labels. */
+    s_lessons_layout.label = kLessonsLabelText;
+    s_reviews_layout.label = kReviewsLabelText;
+
+    /* Use the rest of the display for the Forecast. */
+    s_forecast_box.origin.x = bounds.origin.x + kBoxSpacing;
+    s_forecast_box.origin.y = s_availables_box.origin.y + s_availables_box.size.h + kBoxSpacing;
+    s_forecast_box.size.w = bounds.size.w - 2 * kBoxSpacing;
+    s_forecast_box.size.h = bounds.origin.y + bounds.size.h - kBoxSpacing - s_forecast_box.origin.y;
 }
 
 // -----------------------------------------------------------------------------
@@ -231,47 +258,31 @@ static inline time_t first_of(time_t a, time_t b) {
     return a < b ? a : b;
 }
 
-static void draw_available(GContext* ctx, GRect* box, GColor bg, const char* label, const char* value) {
-
-    GRect ibox;
-    GRect tbox;
-    const MFont* labelFont = kLabelFont;
-    const MFont* valueFont = kValueFont;
-
-    int labelMargin = labelFont->ascender / 2;
-    int valueMargin = valueFont->ascender / 2;
-    int labelHeight = labelFont->cap_height + 2 * labelMargin;
-    int valueHeight = valueFont->cap_height + 2 * valueMargin;
-
-    box->size.h = labelHeight + valueHeight + kBoxStrokeWidth;
+static void draw_available(GContext* ctx, AvailablesLayout* layout, int value) {
 
     /* Fill the whole box. */
-    graphics_context_set_fill_color(ctx, bg);
-    graphics_fill_rect(ctx, *box, kBoxCornerRadius, GCornersAll);
+    graphics_context_set_fill_color(ctx, layout->color);
+    graphics_fill_rect(ctx, layout->box, kBoxCornerRadius, GCornersAll & layout->corner_mask);
 
     /* Fill the label inset box. */
-    ibox.origin.x = box->origin.x + kBoxStrokeWidth;
-    ibox.origin.y = box->origin.y + valueHeight;
-    ibox.size.w = box->size.w - 2 * kBoxStrokeWidth;
-    ibox.size.h = labelHeight;
+    GRect ibox = grect_inset(layout->box, layout->insets);
     graphics_context_set_fill_color(ctx, kLabelInsetColor);
-    graphics_fill_rect(ctx, ibox, kBoxCornerRadius - kBoxStrokeWidth, GCornersBottom);
+    graphics_fill_rect(ctx, ibox, kBoxCornerRadius - kBoxStrokeWidth, GCornersBottom & layout->corner_mask);
 
-    /* Draw the value. */
-    tbox.origin.x = box->origin.x;
-    tbox.origin.y = box->origin.y + valueMargin - valueFont->ascender;
-    tbox.size.w = ibox.size.w;
-    tbox.size.h = valueFont->ascender + valueFont->cap_height;
-    graphics_context_set_text_color(ctx, kValueTextColor);
-    graphics_draw_text(ctx, value, valueFont->bold, tbox, GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
-
-    /* Draw the label. */
-    tbox.origin.x = ibox.origin.x;
-    tbox.origin.y = ibox.origin.y + labelMargin - labelFont->ascender;
-    tbox.size.w = box->size.w;
-    tbox.size.h = labelFont->ascender + labelFont->cap_height;
+    /* Draw the label text. */
+    GRect tbox = grect_inset(ibox, s_label_fitment.insets);
     graphics_context_set_text_color(ctx, kLabelTextColor);
-    graphics_draw_text(ctx, label, labelFont->regular, tbox, GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
+    graphics_draw_text(ctx, layout->label, kLabelFont->gfont, tbox, GTextOverflowModeWordWrap, layout->alignment, NULL);
+
+    /* Draw the value text. */
+    ibox = layout->box;
+    ibox.size.h = s_value_fitment.size.h;
+    tbox = grect_inset(ibox, s_value_fitment.insets);
+    char* buffer = s_scratch_text_buffer;
+    size_t buflen = sizeof s_scratch_text_buffer;
+    snprintf(buffer, buflen, "%u", value);
+    graphics_context_set_text_color(ctx, kValueTextColor);
+    graphics_draw_text(ctx, buffer, kValueFont->gfont, tbox, GTextOverflowModeWordWrap, layout->alignment, NULL);
 }
 
 static GRect draw_forecast_row(GContext* ctx, GRect box, time_t time, uint16_t count, uint16_t total) {
@@ -297,15 +308,15 @@ static GRect draw_forecast_row(GContext* ctx, GRect box, time_t time, uint16_t c
         snprintf(buffer, maxsize, "%u%c", h, m);
     }
     APP_LOG(APP_LOG_LEVEL_DEBUG, "%s +%u =%u", buffer, count, total);
-    graphics_draw_text(ctx, buffer, font->regular, tbox, GTextOverflowModeWordWrap, GTextAlignmentLeft, NULL);
+    graphics_draw_text(ctx, buffer, font->gfont, tbox, GTextOverflowModeWordWrap, GTextAlignmentLeft, NULL);
 
     snprintf(buffer, maxsize, "%u", total);
-    graphics_draw_text(ctx, buffer, font->regular, tbox, GTextOverflowModeWordWrap, GTextAlignmentRight, NULL);
+    graphics_draw_text(ctx, buffer, font->gfont, tbox, GTextOverflowModeWordWrap, GTextAlignmentRight, NULL);
 
-    GSize totalSize = graphics_text_layout_get_content_size(" |9999", font->regular, box, GTextOverflowModeWordWrap, GTextAlignmentRight);
+    GSize totalSize = graphics_text_layout_get_content_size(" |9999", font->gfont, box, GTextOverflowModeWordWrap, GTextAlignmentRight);
     tbox.size.w -= totalSize.w;
     snprintf(buffer, maxsize, "+%u", count);
-    graphics_draw_text(ctx, buffer, font->regular, tbox, GTextOverflowModeWordWrap, GTextAlignmentRight, NULL);
+    graphics_draw_text(ctx, buffer, font->gfont, tbox, GTextOverflowModeWordWrap, GTextAlignmentRight, NULL);
     
     box.origin.y += rbox.size.h;
     box.size.h -= rbox.size.h;
@@ -342,26 +353,14 @@ static void draw_main_screen(Layer* layer, GContext* ctx) {
     graphics_context_set_fill_color(ctx, kMainWindowColor);
     graphics_fill_rect(ctx, bounds, 0, GCornerNone);
 
-    /* Draw the available lessons box. */
-    box.origin.x = kBoxSpacing;
-    box.origin.y = kBoxSpacing;
-    box.size.w = bounds.size.w / 2 - kBoxSpacing - kBoxSpacing/2;
-    snprintf(buffer, end - buffer, "%u", q->lesson_count);
-    draw_available(ctx, &box, kLessonsBoxColor, kLessonsLabelText, buffer);
-
-    /* Draw the available reviews box. */
-    box.origin.x = bounds.size.w / 2 + kBoxSpacing/2;
-    snprintf(buffer, end - buffer, "%u", q->review_count);
-    draw_available(ctx, &box, kReviewsBoxColor, kReviewsLabelText, buffer);
+    draw_available(ctx, &s_lessons_layout, q->lesson_count);
+    draw_available(ctx, &s_reviews_layout, q->review_count);
 
     /* Draw the box for the review forecast. */
-    box.origin.x = kBoxSpacing;
-    box.origin.y += box.size.h + kBoxSpacing;
-    box.size.w = bounds.size.w - 2 * kBoxSpacing;
-    box.size.h = bounds.size.h - kBoxSpacing - box.origin.y;
     graphics_context_set_fill_color(ctx, kForecastBoxColor);
-    graphics_fill_rect(ctx, box, kBoxCornerRadius, GCornersAll);
+    graphics_fill_rect(ctx, s_forecast_box, kBoxCornerRadius, kForecastCorners);
 
+    box = s_forecast_box;
     const MFont* headingFont = kForecastHeadingFont;
     uint16_t headingMargin = headingFont->ascender / 2;
     box.origin.x += headingMargin;
@@ -378,7 +377,7 @@ static void draw_main_screen(Layer* layer, GContext* ctx) {
         tbox.origin.y = box.origin.y;
         tbox.size.w = box.size.w - 2 * margin;
         tbox.size.h = box.size.h - 2;
-        graphics_draw_text(ctx, text, font->bold, tbox, GTextOverflowModeFill, GTextAlignmentCenter, NULL);
+        graphics_draw_text(ctx, text, font->gfont, tbox, GTextOverflowModeFill, GTextAlignmentCenter, s_layout_attributes);
         return;
     }
 
@@ -403,7 +402,7 @@ static void draw_main_screen(Layer* layer, GContext* ctx) {
             }
             tbox = box;
             APP_LOG(APP_LOG_LEVEL_DEBUG, "%s", kDayLabel[day]);
-            graphics_draw_text(ctx, kDayLabel[day], headingFont->bold, tbox, GTextOverflowModeWordWrap, GTextAlignmentLeft, NULL);
+            graphics_draw_text(ctx, kDayLabel[day], headingFont->gfont, tbox, GTextOverflowModeWordWrap, kHeadingAlignment, NULL);
             box.origin.y += headingHeight;
             box.size.h -= headingHeight;
         }
@@ -412,11 +411,12 @@ static void draw_main_screen(Layer* layer, GContext* ctx) {
         }
         box = draw_forecast_row(ctx, box, rowTime, rowReviews, totalReviews);
     }
-
 }
 
 static void load_main_screen(Window* window) {
     Layer* layer = window_get_root_layer(window);
+    GRect bounds = layer_get_bounds(layer);
+    layout_stuff(bounds);
     layer_set_update_proc(layer, &draw_main_screen);
 }
 
@@ -432,6 +432,88 @@ Window* create_main_screen() {
     return window;
 }
 
+// -----------------------------------------------------------------------------
+//
+// -----------------------------------------------------------------------------
+
+static void draw_text_screen(Layer* layer, GContext* ctx, const char* text, GFont font) {
+
+    GRect box = layer_get_bounds(layer);
+    graphics_fill_rect(ctx, box, 0, GCornerNone);
+
+    box = grect_inset(box, kTextScreenInsets);
+    GTextOverflowMode overflow = GTextOverflowModeWordWrap;
+    GTextAlignment alignment = GTextAlignmentCenter;
+    GSize size = graphics_text_layout_get_content_size(
+        text, font, box, overflow, alignment);
+    box.origin.y = (box.size.h - size.h) / 2;
+
+    graphics_draw_text(ctx, text, font, box, overflow, alignment, s_layout_attributes);
+}
+
+// -----------------------------------------------------------------------------
+// Load Screen functions
+// -----------------------------------------------------------------------------
+
+static void draw_loading_screen(Layer* layer, GContext* ctx) {
+    graphics_context_set_text_color(ctx, GColorBlack);
+    graphics_context_set_fill_color(ctx, GColorWhite);
+    draw_text_screen(layer, ctx, s_loading_text_buffer, kLoadScreenFont->gfont);
+}
+
+static void load_loading_screen(Window* window) {
+    Layer* layer = window_get_root_layer(window);
+    layer_set_update_proc(layer, &draw_loading_screen);
+}
+
+static void unload_loading_screen(Window* window) {
+}
+
+Window* create_loading_screen() {
+    Window* window = window_create();
+    window_set_window_handlers(window, (WindowHandlers) {
+        .load = load_loading_screen,
+        .unload = unload_loading_screen,
+    });
+    return window;
+}
+
+// -----------------------------------------------------------------------------
+// Result Screen functions
+// -----------------------------------------------------------------------------
+
+static void draw_message_screen(Layer* layer, GContext* ctx) {
+    graphics_context_set_fill_color(ctx, s_message_fill_color);
+    graphics_context_set_text_color(ctx, s_message_text_color);
+    draw_text_screen(layer, ctx, s_message_text_buffer, kMessageScreenFont->gfont);
+}
+
+static void load_message_screen(Window* window) {
+    Layer* layer = window_get_root_layer(window);
+    layer_set_update_proc(layer, &draw_message_screen);
+}
+
+static void unload_message_screen(Window* window) {
+}
+
+Window* create_message_screen() {
+    Window* window = window_create();
+    window_set_window_handlers(window, (WindowHandlers) {
+        .load = load_message_screen,
+        .unload = unload_message_screen,
+    });
+    return window;
+}
+
+static void show_error_screen(const char* message) {
+    strncpy(s_message_text_buffer, message, sizeof s_message_text_buffer);
+    s_message_fill_color = kErrorScreenColor;
+    s_message_text_color = kErrorTextColor;
+    if (!window_stack_contains_window(s_message_screen)) {
+        window_stack_push(s_message_screen, true);
+    }
+    window_stack_remove(s_load_screen, false);
+}
 
 // -----------------------------------------------------------------------------
 // Event Handlers
