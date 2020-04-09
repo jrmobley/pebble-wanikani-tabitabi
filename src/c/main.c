@@ -107,7 +107,7 @@ static const MFont* kValueFont = &s_gothic_28b;
 static const MFont* kLabelFont = &s_gothic_14r;
 static const MFont* kForecastHeadingFont = &s_gothic_14b;
 static const MFont* kForecastRowFont = &s_gothic_18r;
-static const MFont* kNoForecastFont = &s_gothic_18b;
+static const MFont* kEmptyForecastFont = &s_gothic_18b;
 static const char const* kLoadScreenDefaultText = "TabiTabi";
 static const char const* kLessonsLabelText = "Lessons";
 static const char const* kReviewsLabelText = "Reviews";
@@ -138,6 +138,10 @@ static TextFitment s_label_fitment;
 static AvailablesLayout s_lessons_layout;
 static AvailablesLayout s_reviews_layout;
 static GRect s_forecast_box;
+static GEdgeInsets s_forecast_insets;
+static int16_t s_time_col_w;
+static int16_t s_count_col_w;
+static int16_t s_total_col_w;
 
 static const GCornerMask kForecastCorners = PBL_IF_RECT_ELSE(GCornersAll, GCornerNone);
 static const GTextAlignment kHeadingAlignment = PBL_IF_RECT_ELSE(GTextAlignmentLeft, GTextAlignmentCenter);
@@ -158,6 +162,7 @@ static TextFitment text_fitment(const MFont* mfont, const char* text) {
 
 static void layout_stuff(GRect bounds) {
 
+    int16_t bounds_inset = PBL_IF_RECT_ELSE(kBoxSpacing, 0);
     s_label_fitment = text_fitment(kLabelFont, kLessonsLabelText);
     s_value_fitment = text_fitment(kValueFont, "999");
 
@@ -170,16 +175,15 @@ static void layout_stuff(GRect bounds) {
     int16_t w = kBoxSpacing / 2 + s_value_fitment.size.w;
     int16_t pad = bounds.size.h / 2 - usqrt(r*r - w*w) / SQRT_SCALE;
 
-    /* Put the padding into the value fitment. */
+    /* Put the padding into the Value fitment. */
     s_value_fitment.size.h += pad;
     s_value_fitment.insets.top += pad;
 #endif
 
     /* Set up the bounds for the Availables area (Lessons and Reviews). */
-    int16_t availables_inset = PBL_IF_RECT_ELSE(kBoxSpacing, 0);
-    s_availables_box.origin.x = bounds.origin.x + availables_inset;
-    s_availables_box.origin.y = bounds.origin.y + availables_inset;
-    s_availables_box.size.w = bounds.size.w - 2 * availables_inset;
+    s_availables_box.origin.x = bounds.origin.x + bounds_inset;
+    s_availables_box.origin.y = bounds.origin.y + bounds_inset;
+    s_availables_box.size.w = bounds.size.w - 2 * bounds_inset;
     s_availables_box.size.h = s_value_fitment.size.h + s_label_fitment.size.h + kBoxStrokeWidth;
 
     /* Tune the Availables insets for the display shape. */
@@ -219,10 +223,34 @@ static void layout_stuff(GRect bounds) {
     s_reviews_layout.label = kReviewsLabelText;
 
     /* Use the rest of the display for the Forecast. */
-    s_forecast_box.origin.x = bounds.origin.x + kBoxSpacing;
+    s_forecast_box.origin.x = bounds.origin.x + bounds_inset;
     s_forecast_box.origin.y = s_availables_box.origin.y + s_availables_box.size.h + kBoxSpacing;
-    s_forecast_box.size.w = bounds.size.w - 2 * kBoxSpacing;
-    s_forecast_box.size.h = bounds.origin.y + bounds.size.h - kBoxSpacing - s_forecast_box.origin.y;
+    s_forecast_box.size.w = bounds.size.w - 2 * bounds_inset;
+    s_forecast_box.size.h = bounds.origin.y + bounds.size.h - bounds_inset - s_forecast_box.origin.y;
+
+    /* Size the forecast columns. */
+    GRect bigbox = {{0,0},{100,100}};
+    GSize tsize = graphics_text_layout_get_content_size("99:99", kForecastRowFont->gfont, bigbox, GTextOverflowModeWordWrap, GTextAlignmentLeft);
+    s_time_col_w = tsize.w;
+    tsize = graphics_text_layout_get_content_size("+99", kForecastRowFont->gfont, bigbox, GTextOverflowModeWordWrap, GTextAlignmentRight);
+    s_count_col_w = tsize.w;
+    tsize = graphics_text_layout_get_content_size("=9999", kForecastRowFont->gfont, bigbox, GTextOverflowModeWordWrap, GTextAlignmentRight);
+    s_total_col_w = tsize.w;
+
+    s_forecast_insets.top = 0;
+#if defined(PBL_ROUND)
+    int16_t col_spacing = kForecastRowFont->ascender;
+    w = (s_time_col_w + col_spacing + s_count_col_w + col_spacing + s_total_col_w) / 2;
+    pad = bounds.size.h / 2 - usqrt(r*r - w*w) / SQRT_SCALE;
+    s_forecast_insets.bottom = pad - bounds_inset;
+    s_forecast_insets.left =
+    s_forecast_insets.right = s_forecast_box.size.w / 2 - w;
+#else
+    s_forecast_insets.left =
+    s_forecast_insets.right =
+    s_forecast_insets.bottom = kForecastHeadingFont->ascender;
+#endif
+
 }
 
 // -----------------------------------------------------------------------------
@@ -290,47 +318,40 @@ static GRect draw_forecast_row(GContext* ctx, GRect box, time_t time, uint16_t c
     const MFont* font = kForecastRowFont;
     struct tm* local = localtime(&time);
     char* buffer = s_scratch_text_buffer;
-    size_t maxsize = sizeof s_scratch_text_buffer;
-    GRect rbox = box;
-    rbox.origin.x += font->ascender;
-    rbox.size.w -= 2 * font->ascender;
-    rbox.size.h = font->ascender + font->cap_height;
-    GRect tbox = rbox;
+    size_t buflen = sizeof s_scratch_text_buffer;
+    GRect tbox = box;
+    tbox.size.h = font->ascender + font->cap_height;
     
     /* 00 01 ... 11 12 13 14 ... 23
        12  1 ... 11 12  1  2 ... 11 */
     if (clock_is_24h_style()) {
-        snprintf(buffer, maxsize, "%02d:%02d", local->tm_hour, local->tm_min);
+        snprintf(buffer, buflen, "%02d:%02d", local->tm_hour, local->tm_min);
     } else {
         int h = local->tm_hour % 12;
         if (h == 0) h = 12;
         char m = (local->tm_hour < 12) ? 'a' : 'p';
-        snprintf(buffer, maxsize, "%u%c", h, m);
+        snprintf(buffer, buflen, "%u%c", h, m);
     }
     APP_LOG(APP_LOG_LEVEL_DEBUG, "%s +%u =%u", buffer, count, total);
     graphics_draw_text(ctx, buffer, font->gfont, tbox, GTextOverflowModeWordWrap, GTextAlignmentLeft, NULL);
 
-    snprintf(buffer, maxsize, "%u", total);
+    snprintf(buffer, buflen, "%u", total);
     graphics_draw_text(ctx, buffer, font->gfont, tbox, GTextOverflowModeWordWrap, GTextAlignmentRight, NULL);
 
-    GSize totalSize = graphics_text_layout_get_content_size(" |9999", font->gfont, box, GTextOverflowModeWordWrap, GTextAlignmentRight);
-    tbox.size.w -= totalSize.w;
-    snprintf(buffer, maxsize, "+%u", count);
+    tbox.size.w -= s_total_col_w;
+    snprintf(buffer, buflen, "+%u", count);
     graphics_draw_text(ctx, buffer, font->gfont, tbox, GTextOverflowModeWordWrap, GTextAlignmentRight, NULL);
     
-    box.origin.y += rbox.size.h;
-    box.size.h -= rbox.size.h;
+    box.origin.y += tbox.size.h;
+    box.size.h -= tbox.size.h;
     return box;
 }
 
 static void draw_main_screen(Layer* layer, GContext* ctx) {
 
-    char* buffer = s_scratch_text_buffer;
-    char* end = buffer + sizeof s_scratch_text_buffer;
     StudySummary* q = &s_summary;
     GRect bounds = layer_get_bounds(layer);
     GRect box;
-    GRect tbox;
 
     /* Schedule a refresh for the first review in the forecast. */
     if (s_refresh_timer) {
@@ -360,24 +381,12 @@ static void draw_main_screen(Layer* layer, GContext* ctx) {
     graphics_context_set_fill_color(ctx, kForecastBoxColor);
     graphics_fill_rect(ctx, s_forecast_box, kBoxCornerRadius, kForecastCorners);
 
-    box = s_forecast_box;
+    box = grect_inset(s_forecast_box, s_forecast_insets);
     const MFont* headingFont = kForecastHeadingFont;
-    uint16_t headingMargin = headingFont->ascender / 2;
-    box.origin.x += headingMargin;
-    box.origin.y += 0;
-    box.size.w -= 2 * headingMargin;
-    box.size.h -= 2 * 0;
     graphics_context_set_text_color(ctx, kForecastTextColor);
 
     if (q->forecast_length == 0) {
-        const char* text = kEmptyForecastText;
-        const MFont* font = kNoForecastFont;
-        int margin = font->ascender;
-        tbox.origin.x = box.origin.x + margin;
-        tbox.origin.y = box.origin.y;
-        tbox.size.w = box.size.w - 2 * margin;
-        tbox.size.h = box.size.h - 2;
-        graphics_draw_text(ctx, text, font->gfont, tbox, GTextOverflowModeFill, GTextAlignmentCenter, s_layout_attributes);
+        graphics_draw_text(ctx, kEmptyForecastText, kEmptyForecastFont->gfont, box, GTextOverflowModeFill, GTextAlignmentCenter, s_layout_attributes);
         return;
     }
 
@@ -400,9 +409,8 @@ static void draw_main_screen(Layer* layer, GContext* ctx) {
                 day += 1;
                 endOfDay += kOneDay;
             }
-            tbox = box;
             APP_LOG(APP_LOG_LEVEL_DEBUG, "%s", kDayLabel[day]);
-            graphics_draw_text(ctx, kDayLabel[day], headingFont->gfont, tbox, GTextOverflowModeWordWrap, kHeadingAlignment, NULL);
+            graphics_draw_text(ctx, kDayLabel[day], headingFont->gfont, box, GTextOverflowModeWordWrap, kHeadingAlignment, NULL);
             box.origin.y += headingHeight;
             box.size.h -= headingHeight;
         }
