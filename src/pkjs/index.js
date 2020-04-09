@@ -63,7 +63,7 @@ Pebble.addEventListener('appmessage', function (event) {
 
 });
 
-function reportProgress(type, text) {
+function enqueProgressReport(type, text) {
     var message = {};
     message[type] = text;
     jobber.enqueMessage(message, 'Report ' + type + ': ' + text);
@@ -76,10 +76,10 @@ function fetchStudyQueue(wanikani) {
         terminateWithError(error.message);
     }
 
-    reportProgress('PROGRESS', 'Consulting the Crabigator');
+    enqueProgressReport('PROGRESS', 'Consulting the Crabigator');
     jobber.enqueJob(function (_next, _abort) { wanikani.request('user', receiveUser, onWaniKaniError); });
 
-    reportProgress('PROGRESS', 'Receiving the Summary');
+    enqueProgressReport('PROGRESS', 'Receiving the Summary');
     jobber.enqueJob(function (_next, _abort) { wanikani.request('summary', receiveSummary, onWaniKaniError); });
 
     var timelineToken;
@@ -89,7 +89,7 @@ function fetchStudyQueue(wanikani) {
             next();
         });
     } else {
-        reportProgress('PROGRESS', 'Altering the Timeline');
+        enqueProgressReport('PROGRESS', 'Altering the Timeline');
         jobber.enqueJob(function (next, abort) {
             Pebble.getTimelineToken(function (token) {
                 console.log('Aquired timeline token: ' + token);
@@ -103,11 +103,10 @@ function fetchStudyQueue(wanikani) {
         });
     }
 
+    enqueProgressReport('PROGRESS', 'Pushing the Pins');
     jobber.enqueJob(function (next, _abort) {
-        /* All of these functions can prepare their jobs once the above jobs
-           have completed. */
-        
-        reportProgress('PROGRESS', 'Pushing the Pins');
+        /* This job just enqueues more jobs, but it needs the above jobs to
+           complete before it has the data to work from. */        
         pushReviewPins(timelineToken); /* enqueues several jobs */
         sendStudySummary(); /* enqueues one job */
         next();
@@ -202,7 +201,7 @@ function pushReviewPins(timelineToken) {
             }];
         }
 
-        console.log(JSON.stringify(pin, null, 2));
+        //console.log(JSON.stringify(pin, null, 2));
 
         /* NOTE(jr) I do not understand why this extra function closure is
            necessary here to capture each distinct pin.  The pin variable is
@@ -212,6 +211,7 @@ function pushReviewPins(timelineToken) {
         if (timelineToken) {
             (function (pin) {
                 jobber.enqueJob(function (next, abort) {
+                    //console.log('Push pin ' + entry.epochHour + ' @' + formatTimeSlot(entry.epochHour));
                     timelineRequest(timelineToken, pin, 'PUT', function () {
                         rememberTimelinePin(entry);
                         next();
@@ -223,7 +223,13 @@ function pushReviewPins(timelineToken) {
 
     /* Queue a pin deletion job for any outdated pins we know about. */
     var baseEpochHour = wanikaniSummary.reviews[0].epochHour;
-    console.log('delete pins before ' + formatTimeSlot(baseEpochHour));
+    _.each(timelinePins.slice(), function (epochHour) {
+        if (epochHour > (baseEpochHour + 36)) {
+            var found = timelinePins.indexOf(epochHour);
+            console.log('obliviate ' + epochHour);
+            timelinePins.splice(found, 1);            
+        }
+    });
     _.each(timelinePins.slice(), function (epochHour) {
         var pin = { id: userName + '@' + epochHour };
         if (epochHour < baseEpochHour) {
@@ -231,6 +237,7 @@ function pushReviewPins(timelineToken) {
             if (timelineToken) {
                 (function (pin) {
                     jobber.enqueJob(function (next, abort) {
+                        //console.log('Delete pin ' + epochHour + ' @' + formatTimeSlot(epochHour));
                         timelineRequest(timelineToken, pin, 'DELETE', function () {
                             forgetTimelinePin(epochHour);
                             next();
@@ -254,16 +261,16 @@ function rememberTimelinePin(entry) {
     var found = timelinePins.indexOf(entry.epochHour),
         what = '+' + entry.subjectCount + '=' + entry.subjectTotal + ' @' + formatTimeSlot(entry.epochHour);
     if (found < 0) {
-        console.log('remember ' + what);
+        console.log('Remember ' + what);
         timelinePins.push(entry.epochHour);
     } else {
-        console.log('affirm ' + what);
+        console.log('Affirm ' + what);
     }
 }
 
 function forgetTimelinePin(epochHour) {
     var found = timelinePins.indexOf(epochHour);
-    console.log('forget ' + formatTimeSlot(epochHour));
+    console.log('Forget ' + formatTimeSlot(epochHour));
     timelinePins.splice(found, 1);
 }
 
@@ -314,7 +321,7 @@ Pebble.addEventListener('showConfiguration', function () {
     'use strict';
     console.log('Show configuration.');
 
-    reportProgress('CONFIGURE', 'Configuring.');
+    enqueProgressReport('CONFIGURE', 'Configuring.');
     jobber.start();
 
     /* Request the config URL from Clay.  Clay will load current settings
@@ -340,7 +347,7 @@ Pebble.addEventListener('webviewclosed', function (event) {
         }
     } else {
         console.log('Configuration canceled.');
-        reportProgress('CONFIGURE', 0);
+        enqueProgressReport('CONFIGURE', 0);
         jobber.start();
     }
 });
@@ -391,7 +398,7 @@ function timelineRequest(timelineToken, pin, type, next, abort) {
     var xhr = new XMLHttpRequest();
     xhr.onload = function () {
         if (this.status === 200) {
-            console.log(this.responseText);
+            //console.log(this.responseText);
             next();
         } else {
             abort();
@@ -411,7 +418,7 @@ function timelineRequest(timelineToken, pin, type, next, abort) {
     xhr.setRequestHeader('X-User-Token', timelineToken);
 
     // Send
-    console.log('Timeline ' + type + ': ' + JSON.stringify(pin, null, 2));
+    //console.log('Timeline ' + type + ': ' + JSON.stringify(pin, null, 2));
     xhr.send(JSON.stringify(pin));
 }
 

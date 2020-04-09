@@ -9,17 +9,8 @@
 // --------------------------------------------------------------------------
 
 /* Various useful time intervals expressed in seconds. */
-const time_t kOneMinute  = 60;
 const time_t kOneHour    = 60 * 60;
 const time_t kOneDay     = 60 * 60 * 24;
-const time_t kHalfMinute = 60 / 2;
-const time_t kHalfHour   = 60 * 60 / 2;
-const time_t kHalfDay    = 60 * 60 * 24 / 2;
-const time_t kSecondsMark = 45;
-const time_t kMinutesMark = 45 * 60;
-const time_t kHoursMark   = 18 * 60 * 60;
-
-const uint16_t kMaxItemDisplay = 999;
 
 // --------------------------------------------------------------------------
 // Globals
@@ -86,7 +77,7 @@ static void init_fonts() {
     graphics_text_attributes_enable_screen_text_flow(s_layout_attributes, 10);
 }
 
-static const GColor kMainWindowColor   = {.argb = PBL_IF_COLOR_ELSE(GColorLightGrayARGB8,      GColorBlackARGB8)};
+static const GColor kMainWindowColor   = {.argb = PBL_IF_COLOR_ELSE(GColorDarkGrayARGB8,      GColorBlackARGB8)};
 static const GColor kLessonsBoxColor   = {.argb = PBL_IF_COLOR_ELSE(GColorFashionMagentaARGB8, GColorWhiteARGB8)};
 static const GColor kReviewsBoxColor   = {.argb = PBL_IF_COLOR_ELSE(GColorVividCeruleanARGB8,  GColorWhiteARGB8)};
 static const GColor kValueTextColor    = {.argb = PBL_IF_COLOR_ELSE(GColorWhiteARGB8,          GColorBlackARGB8)};
@@ -258,20 +249,20 @@ static void layout_stuff(GRect bounds) {
 // -----------------------------------------------------------------------------
 
 static void update_schedule(StudySummary* q) {
-    int32_t elapsedHours = time(NULL) / kOneHour - q->epoch_hour;
+    int32_t elapsed_hours = time(NULL) / kOneHour - q->epoch_hour;
     int32_t dest = 0;
     for (int k = 0; k < q->forecast_length; k += 2) {
-        int hourOffset = q->forecast[k];
-        int subjectCount = q->forecast[k+1];
-        if (hourOffset <= elapsedHours) {
-            q->review_count += subjectCount;
+        int hour_offset = q->forecast[k];
+        int subject_count = q->forecast[k+1];
+        if (hour_offset <= elapsed_hours) {
+            q->review_count += subject_count;
         } else {
-            q->forecast[dest++] = hourOffset - elapsedHours;
-            q->forecast[dest++] = subjectCount;
+            q->forecast[dest++] = hour_offset - elapsed_hours;
+            q->forecast[dest++] = subject_count;
         }
     }
     q->forecast_length = dest;
-    q->epoch_hour += elapsedHours;
+    q->epoch_hour += elapsed_hours;
 
     Layer* layer = window_get_root_layer(s_main_screen);
     layer_mark_dirty(layer);
@@ -382,7 +373,7 @@ static void draw_main_screen(Layer* layer, GContext* ctx) {
     graphics_fill_rect(ctx, s_forecast_box, kBoxCornerRadius, kForecastCorners);
 
     box = grect_inset(s_forecast_box, s_forecast_insets);
-    const MFont* headingFont = kForecastHeadingFont;
+    const MFont* heading_font = kForecastHeadingFont;
     graphics_context_set_text_color(ctx, kForecastTextColor);
 
     if (q->forecast_length == 0) {
@@ -390,34 +381,34 @@ static void draw_main_screen(Layer* layer, GContext* ctx) {
         return;
     }
 
-    const MFont* rowFont = kForecastRowFont;
-    uint16_t headingHeight = headingFont->ascender + headingFont->cap_height;
-    uint16_t rowHeight = rowFont->ascender + rowFont->cap_height;
+    const MFont* row_font = kForecastRowFont;
+    uint16_t heading_height = heading_font->ascender + heading_font->cap_height;
+    uint16_t row_height = row_font->ascender + row_font->cap_height;
 
     int day = -1;
-    uint16_t totalReviews = q->review_count;
-    time_t endOfDay = time_start_of_today();
+    uint16_t total_reviews = q->review_count;
+    time_t end_of_day = time_start_of_today();
     for (int k = 0; k < q->forecast_length && day < 2; k += 2) {
-        time_t rowTime = (q->epoch_hour + q->forecast[k]) * kOneHour;
-        uint16_t rowReviews = q->forecast[k+1];
-        totalReviews += rowReviews;
-        if (rowTime >= endOfDay) {
-            if (box.size.h < headingHeight) {
+        time_t row_time = (q->epoch_hour + q->forecast[k]) * kOneHour;
+        uint16_t row_reviews = q->forecast[k+1];
+        total_reviews += row_reviews;
+        if (row_time >= end_of_day) {
+            if (box.size.h < heading_height) {
                 break;
             }
-            while (rowTime >= endOfDay) {
+            while (row_time >= end_of_day) {
                 day += 1;
-                endOfDay += kOneDay;
+                end_of_day += kOneDay;
             }
             APP_LOG(APP_LOG_LEVEL_DEBUG, "%s", kDayLabel[day]);
-            graphics_draw_text(ctx, kDayLabel[day], headingFont->gfont, box, GTextOverflowModeWordWrap, kHeadingAlignment, NULL);
-            box.origin.y += headingHeight;
-            box.size.h -= headingHeight;
+            graphics_draw_text(ctx, kDayLabel[day], heading_font->gfont, box, GTextOverflowModeWordWrap, kHeadingAlignment, NULL);
+            box.origin.y += heading_height;
+            box.size.h -= heading_height;
         }
-        if (box.size.h < rowHeight) {
+        if (box.size.h < row_height) {
             break;
         }
-        box = draw_forecast_row(ctx, box, rowTime, rowReviews, totalReviews);
+        box = draw_forecast_row(ctx, box, row_time, row_reviews, total_reviews);
     }
 }
 
@@ -584,33 +575,33 @@ static const char* glance_slice_subtitle(int lessons, int reviews) {
 static void refresh_app_glance(AppGlanceReloadSession* session, size_t limit, void* context) {
 
     StudySummary* q = (StudySummary*)context;
-    int baseEpochHour = q->epoch_hour;
-    uint16_t reviewCount = q->review_count;
+    int base_epoch_hour = q->epoch_hour;
+    uint16_t review_count = q->review_count;
 
     /* We will create one slice for the currently available reviews, and one
        slice for each upcoming review in the schedule, but limit the total
        slices as indicated by the system. */
-    size_t sliceCount = 1 + q->forecast_length / 2;
-    if (sliceCount > limit) {
-        sliceCount = limit;
+    size_t slice_count = 1 + q->forecast_length / 2;
+    if (slice_count > limit) {
+        slice_count = limit;
     }
 
     AppGlanceSlice slice;
     slice.layout.icon = PUBLISHED_ID_ICON;
-    slice.layout.subtitle_template_string = glance_slice_subtitle(q->lesson_count, reviewCount);
+    slice.layout.subtitle_template_string = glance_slice_subtitle(q->lesson_count, review_count);
     slice.expiration_time = APP_GLANCE_SLICE_NO_EXPIRATION;
 
-    for (size_t k = 0; k < sliceCount - 1; ++k) {
-        int epochHour = q->forecast[k * 2];
-        int itemCount = q->forecast[k * 2 + 1];
-        slice.expiration_time = (baseEpochHour + epochHour) * kOneHour;
+    for (size_t k = 0; k < slice_count - 1; ++k) {
+        int epoch_hour = q->forecast[k * 2];
+        int item_count = q->forecast[k * 2 + 1];
+        slice.expiration_time = (base_epoch_hour + epoch_hour) * kOneHour;
         const AppGlanceResult result = app_glance_add_slice(session, slice);
         if (result != APP_GLANCE_RESULT_SUCCESS) {
             APP_LOG(APP_LOG_LEVEL_ERROR, "AppGlance Error: %d", result);
         }
 
-        reviewCount += itemCount;
-        slice.layout.subtitle_template_string = glance_slice_subtitle(q->lesson_count, reviewCount);
+        review_count += item_count;
+        slice.layout.subtitle_template_string = glance_slice_subtitle(q->lesson_count, review_count);
     }
 
     slice.expiration_time = APP_GLANCE_SLICE_NO_EXPIRATION;
