@@ -1,9 +1,9 @@
 WaniKani TabiTabi
 
 [o] Remove durations from all pins.  It makes a mess of the timeline.
-[ ] Roll-in the pebble-app-ready-service dependency, since that package is not easily available from npm.
+[o] Roll-in the pebble-app-ready-service dependency, since that package is not easily available from npm.
 [o] Fix the loading screen content and format.
 [o] Fix the message screen format.
 [o] Use a readable color scheme on aplite and diorite.
-[ ] Use a readable round layout on chalk.
-[ ] With the 'no api key' error message, include some intro language for first time users.
+[o] Use a readable round layout on chalk.
+[o] With the 'no api key' error message, include some intro language for first time users.

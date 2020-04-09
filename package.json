@@ -4,9 +4,8 @@
   "author": "JR Mobley",
   "private": true,
   "dependencies": {
-    "pebble-app-ready-service": "../pebble-app-ready-service",
+    "pebble-events": "^1.2.0",
     "pebble-clay": "^1.0.2",
-    "pebble-events": "^1.1.0",
     "underscore": "^1.8.3"
   },
   "keywords": [
@@ -17,6 +16,7 @@
     "projectType": "native",
     "uuid": "ce694583-c51a-4567-8376-d4758daca3d8",
     "messageKeys": [
+      "AppReadyService_Ready",
       "API_TOKEN",
       "EPOCH_HOUR",
       "LESSON_COUNT",

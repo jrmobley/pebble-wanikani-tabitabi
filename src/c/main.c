@@ -1,7 +1,7 @@
 
 #include <pebble.h>
 #include <pebble-events/pebble-events.h>
-#include <pebble-app-ready-service/pebble-app-ready-service.h>
+#include "pebble-app-ready-service.h"
 #include "isqrt.h"
 
 // --------------------------------------------------------------------------

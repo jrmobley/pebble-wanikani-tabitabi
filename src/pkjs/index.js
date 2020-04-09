@@ -16,7 +16,7 @@ var Jobber = require('./jobber.js');
 var jobber = new Jobber();
 
 var WaniKani = require('./wanikani.js');
-var AppReadyService = require('pebble-app-ready-service');
+var AppReadyService = require('./pebble-app-ready-service.js');
 
 /* Polyfill */
 if (!String.prototype.startsWith) {
