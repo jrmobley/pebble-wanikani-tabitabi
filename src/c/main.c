@@ -388,20 +388,28 @@ static void draw_main_screen(Layer* layer, GContext* ctx) {
     int day = -1;
     uint16_t total_reviews = q->review_count;
     time_t end_of_day = time_start_of_today();
-    for (int k = 0; k < q->forecast_length && day < 2; k += 2) {
+    for (int k = 0; k < q->forecast_length; k += 2) {
         time_t row_time = (q->epoch_hour + q->forecast[k]) * kOneHour;
         uint16_t row_reviews = q->forecast[k+1];
         total_reviews += row_reviews;
         if (row_time >= end_of_day) {
-            if (box.size.h < heading_height) {
+            if (box.size.h < (heading_height + row_height)) {
                 break;
             }
             while (row_time >= end_of_day) {
                 day += 1;
                 end_of_day += kOneDay;
             }
+            const char* day_label;
+            if (day < (int)ARRAY_LENGTH(kDayLabel)) {
+                day_label = kDayLabel[day];
+            } else {
+                struct tm* local = localtime(&row_time);
+                strftime(s_scratch_text_buffer, sizeof s_scratch_text_buffer, "%A", local);
+                day_label = s_scratch_text_buffer;
+            }
             APP_LOG(APP_LOG_LEVEL_DEBUG, "%s", kDayLabel[day]);
-            graphics_draw_text(ctx, kDayLabel[day], heading_font->gfont, box, GTextOverflowModeWordWrap, kHeadingAlignment, NULL);
+            graphics_draw_text(ctx, day_label, heading_font->gfont, box, GTextOverflowModeWordWrap, kHeadingAlignment, NULL);
             box.origin.y += heading_height;
             box.size.h -= heading_height;
         }
