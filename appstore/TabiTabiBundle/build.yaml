@@ -1,0 +1,41 @@
+title: TabiTabi
+type: watchapp
+description: |
+  Keep track of your WaniKani review schedule on your Pebble timeline. WaniKani (https://www.wanikani.com) is an awesome Japanese Kanji learning website, and this app will help you keep up with your studies.
+release_notes: |
+  New settings screen.  New UI design.  WaniKani v2 API.
+category: 5261a8fb3b773043d5000001
+website:
+source: https://github.com/jrmobley/pebble-wanikani-tabitabi
+pbw_file: pebble-wanikani-tabitabi.pbw
+header: banner.png
+large_icon: icon144.png
+small_icon: icon48.png
+assets:
+-
+  name: aplite
+  screenshots:
+    - screen-1-a.png
+    - screen-3-a.png
+    - screen-4-a.png
+-
+  name: basalt
+  screenshots:
+    - screen-1-b.png
+    - screen-2-b.png
+    - screen-3-b.png
+    - screen-4-b.png
+-
+  name: chalk
+  screenshots:
+    - screen-1-c.png
+    - screen-2-c.png
+    - screen-3-c.png
+    - screen-4-c.png
+-
+  name: diorite
+  screenshots:
+    - screen-1-d.png
+    - screen-2-d.png
+    - screen-3-a.png
+    - screen-4-a.png
